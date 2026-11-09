@@ -101,6 +101,9 @@ main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
 .pill.closed { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
 .pill.building { background: var(--info-bg); color: var(--info); }
 .statusline .updated { color: var(--muted); font-size: 12px; margin-left: auto; }
+.mkt { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; border: 1px solid var(--line); color: var(--muted); }
+.mkt.up { color: var(--gain); border-color: var(--gain); }
+.mkt.down { color: var(--loss); border-color: var(--loss); }
 .alert { display: flex; gap: 10px; align-items: flex-start; background: var(--loss-bg); border: 1px solid var(--loss); border-radius: var(--r); padding: 10px 14px; font-size: 13px; }
 .alert b { color: var(--loss); }
 
@@ -325,6 +328,7 @@ tr.click:hover td { background: var(--panel-2); }
     <section class="statusline">
       <h2 id="agentName">Azioni</h2>
       <span class="pill" id="statusPill"></span>
+      <span class="mkt" id="mktPill" hidden></span>
       <span class="updated" id="updated"></span>
     </section>
     <div id="staleAlert" hidden></div>
@@ -684,6 +688,13 @@ function render() {
   const d = state.data[state.agent];
   $("agentName").textContent = d.name;
   const pill = $("statusPill"); pill.className = "pill " + d.status; pill.textContent = STATUS[d.status] || d.status; pill.title = d.status_label;
+  const mk = $("mktPill"), mv = d.market;
+  mk.hidden = mv === undefined || mv === null;
+  if (!mk.hidden) {
+    mk.className = "mkt " + (mv > 0 ? "up" : mv < 0 ? "down" : "");
+    mk.textContent = "Mercato ora: " + (mv > 0 ? "▲ in salita" : mv < 0 ? "▼ in discesa" : "● incerto");
+    mk.title = d.agent === "crypto" ? "BTC ed ETH: prezzo rispetto al VWAP e trend delle medie" : "SPY e QQQ: prezzo rispetto al VWAP e trend delle medie";
+  }
   $("updated").textContent = "Aggiornato " + new Date(d.updated_at).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + d.status_label;
   const st = $("staleAlert");
   st.hidden = !isStale(d);
@@ -754,7 +765,7 @@ function renderChart(d) {
     s.createPriceLine({ price: open.target, color: tok("--gain"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "target" });
   } else {
     const sig = d.signals.find((x) => x.symbol === state.sym);
-    if (sig && sig.level) s.createPriceLine({ price: sig.level, color: tok("--accent"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "livello d'ingresso" });
+    if (sig && sig.level) s.createPriceLine({ price: sig.level, color: tok("--accent"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: sig.level_label || "livello d'ingresso" });
   }
   renderLegend(d);
   ch.timeScale().fitContent();
@@ -778,7 +789,7 @@ function renderLegend(d, flash) {
     legend.push(`<span><i style="background:${tok("--loss")}"></i>stop ${nf(open.stop)}</span><span><i style="background:${tok("--gain")}"></i>target ${nf(open.target)}</span>`);
   } else {
     const sig = d.signals.find((x) => x.symbol === state.sym);
-    if (sig && sig.level) legend.push(`<span><i style="background:${tok("--accent")}"></i>livello d'ingresso ${nf(sig.level)} · ${esc(sig.text)}</span>`);
+    if (sig && sig.level) legend.push(`<span><i style="background:${tok("--accent")}"></i>${esc(sig.level_label || "livello d'ingresso")} ${nf(sig.level)} · ${esc(sig.text)}</span>`);
     else if (sig) legend.push(`<span>${esc(sig.text)}</span>`);
   }
   if (!legend.length && !mine.length) legend.push("<span>Nessun trade su questo titolo oggi.</span>");
