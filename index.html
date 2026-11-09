@@ -613,7 +613,7 @@ const cls = (n) => (n > 0 ? "gain" : n < 0 ? "loss" : "");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const STATUS = { running: "Attivo", paused: "In pausa", closed: "Mercato chiuso", building: "In costruzione" };
 const SIG = { waiting: "In attesa", triggered: "Scattato", traded: "Operato", skipped: "Saltato", blocked: "Bloccato", expired: "Scaduto", "no-data": "Senza dati", error: "Errore" };
-const REASON = { target: "target", stop: "stop", "stop (gap)": "stop (gap)", flat_by: "fine giornata", "stale (missed flat_by)": "chiuso in ritardo" };
+const REASON = { target: "target", stop: "stop", "stop (gap)": "stop (gap)", flat_by: "fine giornata", "stale (missed flat_by)": "chiuso in ritardo", time: "tempo scaduto" };
 const NY_OFFSET = -5 * 3600;                         // shown in New York time (winter); crypto shows UTC
 const STALE_MIN = 20;
 const C = getComputedStyle(document.documentElement);
@@ -730,12 +730,13 @@ function renderChart(d) {
   $("symChips").querySelectorAll("button").forEach((b) => b.onclick = () => { state.sym = b.dataset.sym; render(); });
   const isCrypto = d.agent === "crypto";
   const shift = isCrypto ? 0 : PREVIEW ? NY_OFFSET : nyOffset(d.bars[state.sym][0][0]);
-  $("chartHint").textContent = isCrypto ? "candele da 15 minuti · ora UTC" : "candele da 5 minuti · ora di New York";
+  $("chartHint").textContent = isCrypto ? (PREVIEW ? "candele da 15 minuti · ora UTC" : "candele da 1 ora · ora UTC") : "candele da 5 minuti · ora di New York";
   const ch = baseChart(el);
   const s = ch.addCandlestickSeries({ upColor: tok("--gain"), downColor: tok("--loss"), borderVisible: false, wickUpColor: tok("--gain"), wickDownColor: tok("--loss") });
   s.setData(d.bars[state.sym].map(([t, o, h, l, c]) => ({ time: t + shift, open: o, high: h, low: l, close: c })));
   liveSeries = { s, shift, sym: state.sym };
-  const mine = d.trades.filter((t) => t.symbol === state.sym && t.date === d.date).map(withTimes).filter((t) => t._t);
+  const first = d.bars[state.sym][0][0];
+  const mine = d.trades.filter((t) => t.symbol === state.sym).map(withTimes).filter((t) => t._t && (isCrypto ? t._t >= first : t.date === d.date));
   const markers = [];
   mine.forEach((t) => {
     const long = t.side === "buy";
@@ -760,7 +761,9 @@ function renderChart(d) {
 }
 function withTimes(t) {
   // the engine stores New York times; a marker sits on the bar that triggered (5 minutes before its close)
-  if (t._t || !t.entry_time) return t;
+  if (t._t) return t;
+  if (t.entry_ts) return Object.assign({}, t, { _t: t.entry_ts, _tx: t.exit_ts });   // crypto: UTC candle starts
+  if (!t.entry_time) return t;
   const out = Object.assign({}, t, { _t: nyEpoch(t.date, t.entry_time) - 300 });
   if (t.exit_time) out._tx = nyEpoch(t.date, t.exit_time) - (t.exit_reason === "flat_by" ? 0 : 300);
   return out;
@@ -867,7 +870,7 @@ function renderStats(d) {
       <div><h4>Per titolo</h4><div class="table-wrap"><table><thead><tr><th>Titolo</th><th class="r">Trade</th><th class="r">Vinti</th><th class="r">Netto</th></tr></thead><tbody>
         ${syms.slice(0, 8).map(([s, v]) => `<tr><td class="sym">${esc(s)}</td><td class="r num">${v.n}</td><td class="r num">${nf(100 * v.w / v.n, 0)}%</td><td class="r num ${cls(v.net)}">${signed(v.net)}</td></tr>`).join("")}
       </tbody></table></div></div>
-      <div><h4>Per ora d'entrata (New York)</h4><div class="hours">
+      <div><h4>Per ora d'entrata (${d.agent === "crypto" ? "UTC" : "New York"})</h4><div class="hours">
         ${hours.map(([h, s]) => { const w = 50 * Math.abs(s.net) / maxAbs; return `<div class="hour"><span class="num muted">${h}:00</span>
           <span class="track"><span class="bar" style="${s.net >= 0 ? "left:50%" : "right:50%"};width:${w}%;background:${s.net >= 0 ? tok("--gain") : tok("--loss")}"></span></span>
           <span class="num r ${cls(s.net)}" style="text-align:right">${signed(s.net)}</span></div>`; }).join("")}
@@ -1171,7 +1174,6 @@ const Live = (() => {
     REAL.forEach((k) => {
       let d = out[k];
       if (!d) d = emptyAgent(k);
-      if (k === "crypto") { d.status = "building"; d.status_label = "In costruzione: motore 24/7 in arrivo"; }
       d.days = d.days || []; d.signals = d.signals || []; d.news = d.news || []; d.events = d.events || []; d.bars = d.bars || {};
       out[k] = overlay(k, d);
     });
