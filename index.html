@@ -106,6 +106,8 @@ main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
 .mkt.down { color: var(--loss); border-color: var(--loss); }
 .alert { display: flex; gap: 10px; align-items: flex-start; background: var(--loss-bg); border: 1px solid var(--loss); border-radius: var(--r); padding: 10px 14px; font-size: 13px; }
 .alert b { color: var(--loss); }
+.alert.macro { background: var(--warn-bg); border-color: var(--warn); }
+.alert.macro b { color: var(--warn); }
 
 .strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
 .kpi { padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
@@ -332,6 +334,7 @@ tr.click:hover td { background: var(--panel-2); }
       <span class="updated" id="updated"></span>
     </section>
     <div id="staleAlert" hidden></div>
+    <div id="macroAlert" hidden></div>
 
     <section class="strip" id="strip" aria-label="Conto"></section>
 
@@ -648,6 +651,9 @@ function nyEpoch(date, hhmm) {          // "2026-11-09", "10:15" New York -> UTC
   const guess = Date.UTC(y, m - 1, d, h, mi) / 1000;
   return guess - nyOffset(guess);
 }
+function itTime(date, hhmm) {          // New York date + time -> "14:30" in Italy
+  return new Date(nyEpoch(date, hhmm) * 1000).toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
+}
 function marketOpenNow() {
   const p = nyParts(Date.now()), mins = +p.hour * 60 + +p.minute;
   return !["Sat", "Sun"].includes(p.weekday) && mins >= 9 * 60 + 35 && mins <= 16 * 60 + 5;
@@ -699,6 +705,9 @@ function render() {
   const st = $("staleAlert");
   st.hidden = !isStale(d);
   st.innerHTML = isStale(d) ? `<div class="alert"><span>⚠</span><div><b>Il bot non aggiorna da ${minutesOld(d)} minuti.</b> In orario di mercato dovrebbe farlo ogni 5–15. Controlla GitHub Actions: un giro può essere in ritardo o fallito. I numeri qui sotto sono quelli dell'ultimo aggiornamento.</div></div>` : "";
+  const mn = d.macro && d.macro.now, ma = $("macroAlert");
+  ma.hidden = !mn;
+  ma.innerHTML = mn ? `<div class="alert macro"><span>⏸</span><div><b>Annuncio economico: nessuna nuova entrata dalle ${esc(mn.starts)} alle ${esc(mn.ends)} di New York.</b> ${esc(mn.name)} alle ${esc(mn.time)} di New York (${itTime(mn.date, mn.time)} in Italia). I trade aperti restano gestiti con stop e target.</div></div>` : "";
   renderStrip(d); renderChart(d); renderEquity(d); renderPnl(d); renderStats(d); renderControls(d); renderSignals(d); renderNews(d); renderBottom(d);
 }
 
@@ -1032,6 +1041,10 @@ function renderBottom(d) {
       ${kv("Trade al giorno", r.max_trades_per_day)}${kv("Rendimento/rischio minimo", nf(r.min_reward_risk, 1))}${kv("Riserva di cassa", r.cash_buffer_pct + "%")}${kv("Posizione max", r.max_position_pct + "% del conto")}${kv("Short", r.allow_short ? "attivo" : "spento")}</dl>
     <dl><h4>Orari (New York)</h4>${kv("Nessuna entrata prima delle", r.no_entries_before)}${kv("Nessuna entrata dopo le", r.no_entries_after)}${kv("Tutto chiuso entro le", r.flat_by)}
       <h4>Costi simulati</h4>${kv("Slippage", "$" + nf(s.slippage_per_share) + " per azione")}${kv("Commissione", "$" + nf(s.commission_per_share, 3) + " per azione, min $" + nf(s.commission_min))}${kv("Segnale troppo vecchio dopo", s.max_entry_age_minutes + " minuti")}</dl>
+    <dl><h4>Prossimi annunci economici</h4>${(d.macro && d.macro.next && d.macro.next.length) ? d.macro.next.map((e) =>
+        kv(esc(e.date.split("-").reverse().join("/")) + " · " + esc(e.name), esc(e.time) + " NY · " + itTime(e.date, e.time) + " IT")).join("")
+        : '<div class="note" style="padding:7px 0">Nessun annuncio nei prossimi 14 giorni.</div>'}
+      <div class="note" style="padding-top:8px">Niente nuove entrate da 30 minuti prima a 45–90 minuti dopo ogni annuncio, né per 60 minuti su un titolo dopo una notizia forte.</div></dl>
     <dl><h4>Strategia</h4>${kv("Setup", esc(s.setup))}${kv("Stop", s.stop === "or-mid" ? "metà del range d'apertura" : esc(s.stop))}${kv("Target", esc(s.target) + " (volte il rischio)")}
       ${kv("Titoli seguiti", s.watchlist.length)}<div class="note" style="padding-top:8px">${s.watchlist.map(esc).join(" · ")}</div></dl>
   </div>`;
