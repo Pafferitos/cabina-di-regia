@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<style>html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px)}</style>
+<title>Cabina di Regia</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a trading desk. Agent switcher on top (bottom bar on phones), account strip, then the bot's
+   chart + equity + P&L + stats beside the controls and live criteria; diary, log and rules at the
+   bottom. A fourth view, "Tutti", compares the three agents. Dark only, by request. */
+:root {
+  --bg: #0a0e13;
+  --panel: #111821;
+  --panel-2: #0d131b;
+  --line: #1d2733;
+  --fg: #e4eaf1;
+  --muted: #8593a4;
+  --faint: #5b6878;
+  --accent: #f2b544;      /* amber: selection and focus, never a gain or a loss */
+  --accent-ink: #1a1305;
+  --gain: #2fbf8a;
+  --loss: #f0566a;
+  --warn: #e8a33d;
+  --info: #5aa2f0;
+  --bench: #a78bfa;       /* the benchmark line, apart from gains and losses */
+  --gain-bg: rgba(47, 191, 138, .12);
+  --loss-bg: rgba(240, 86, 106, .12);
+  --warn-bg: rgba(232, 163, 61, .13);
+  --info-bg: rgba(90, 162, 240, .12);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); }
+body { font: 14px/1.5 var(--f-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel-2); }
+a { color: var(--info); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.gain { color: var(--gain); }
+.loss { color: var(--loss); }
+.muted { color: var(--muted); }
+
+.wrap { max-width: 1440px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* top bar */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; padding-block: 10px; }
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.brand h1 { font: 700 20px/1 var(--f-display); letter-spacing: -.01em; margin: 0; }
+.brand small { color: var(--muted); font-size: 12px; }
+.agents { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 4px; overflow-x: auto; max-width: 100%; }
+.agent-tab { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; border-radius: 999px; padding: 7px 14px; cursor: pointer; white-space: nowrap; color: var(--muted); font-weight: 500; }
+.agent-tab:hover { color: var(--fg); }
+.agent-tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.dot.running { background: var(--gain); box-shadow: 0 0 0 3px var(--gain-bg); }
+.dot.paused { background: var(--warn); }
+.dot.closed { background: var(--faint); }
+.dot.building { background: var(--info); }
+.dot.stale { background: var(--loss); box-shadow: 0 0 0 3px var(--loss-bg); }
+.dot.all { background: linear-gradient(135deg, var(--gain), var(--info)); }
+.agent-tab[aria-selected="true"] .dot { box-shadow: none; outline: 2px solid var(--accent-ink); outline-offset: 1px; }
+.btn-stop { border: 1px solid var(--loss); background: var(--loss-bg); color: var(--loss); border-radius: 999px; padding: 7px 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-stop:hover { background: var(--loss); color: var(--bg); }
+.btn-start { border: 1px solid var(--gain); background: var(--gain-bg); color: var(--gain); border-radius: 999px; padding: 7px 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-start:hover { background: var(--gain); color: var(--bg); }
+.sheet .card.go { border-color: var(--gain); }
+.sheet .card.go h3 { color: var(--gain); }
+.btn.go { background: var(--gain); color: var(--bg); border-color: var(--gain); }
+.top-actions { display: flex; gap: 8px; }
+
+.banner { background: var(--info-bg); color: var(--fg); border-bottom: 1px solid var(--line); font-size: 13px; }
+.banner .wrap { padding-block: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner b { color: var(--info); }
+
+/* emergency sheet */
+.sheet { position: fixed; inset: 0; z-index: 30; background: rgba(4, 7, 10, .72); display: grid; place-items: center; padding: 16px; }
+.sheet .card { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--loss); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
+.sheet h3 { font: 700 18px var(--f-display); margin: 0; color: var(--loss); }
+.sheet .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
+
+/* status line + account strip */
+.statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.statusline h2 { font: 700 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.pill.running { background: var(--gain-bg); color: var(--gain); }
+.pill.paused { background: var(--warn-bg); color: var(--warn); }
+.pill.closed { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
+.pill.building { background: var(--info-bg); color: var(--info); }
+.statusline .updated { color: var(--muted); font-size: 12px; margin-left: auto; }
+.alert { display: flex; gap: 10px; align-items: flex-start; background: var(--loss-bg); border: 1px solid var(--loss); border-radius: var(--r); padding: 10px 14px; font-size: 13px; }
+.alert b { color: var(--loss); }
+
+.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.kpi { padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
+.kpi:last-child { border-right: 0; }
+.kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.kpi .value { font: 500 22px/1.25 var(--f-mono); font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
+.kpi .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.meter { height: 6px; border-radius: 3px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--gain); border-radius: 3px; }
+.meter i.mid { background: var(--warn); }
+.meter i.high { background: var(--loss); }
+.flash-up { animation: fu 1.1s ease-out; }
+.flash-down { animation: fd 1.1s ease-out; }
+@keyframes fu { from { background: rgba(47, 191, 138, .35); } to { background: transparent; } }
+@keyframes fd { from { background: rgba(240, 86, 106, .35); } to { background: transparent; } }
+
+/* main grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.col { display: grid; gap: 16px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.panel > header h3 { font: 600 15px/1.2 var(--f-display); margin: 0; letter-spacing: .005em; }
+.panel > header .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+.panel .body { padding: 14px 16px; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 500 12px/1.4 var(--f-mono); color: var(--muted); }
+.chip:hover { color: var(--fg); }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.chart { height: 360px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px 14px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 14px; height: 2px; display: inline-block; }
+.chart-legend .live { border-radius: 4px; padding: 0 3px; }
+
+.eq-chart { height: 220px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 12px 16px 14px; border-top: 1px solid var(--line); font-size: 13px; }
+.facts div { display: grid; gap: 1px; }
+.facts small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.facts b { font: 500 15px var(--f-mono); }
+.verdict { padding: 0 16px 14px; font-size: 13px; color: var(--muted); }
+.verdict b { color: var(--fg); }
+
+.pnl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pnl-chart { height: 180px; }
+.pnl-total { display: flex; gap: 16px; flex-wrap: wrap; padding: 0 16px 14px; font-size: 12px; color: var(--muted); }
+
+/* advanced stats */
+.stats-top { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.stats-top .kpi .value { font-size: 18px; }
+.stats-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.stats-cols > div { min-width: 0; }
+.stats-cols > div + div { border-left: 1px solid var(--line); }
+.stats-cols h4 { font: 600 13px var(--f-display); margin: 0; padding: 12px 16px 6px; color: var(--muted); }
+.hours { display: grid; gap: 6px; padding: 6px 16px 14px; }
+.hour { display: grid; grid-template-columns: 52px minmax(0, 1fr) 76px; align-items: center; gap: 10px; font-size: 12px; }
+.hour .track { position: relative; height: 14px; background: var(--panel-2); border-radius: 3px; }
+.hour .track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.hour .bar { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+
+/* controls */
+.controls { display: grid; gap: 14px; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.switch-row .t { font-weight: 600; }
+.switch-row .d { color: var(--muted); font-size: 12px; }
+.switch { position: relative; width: 46px; height: 26px; flex: none; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+.switch[aria-checked="true"] { background: var(--warn-bg); border-color: var(--warn); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); background: var(--warn); }
+.switch.short[aria-checked="true"] { background: var(--info-bg); border-color: var(--info); }
+.switch.short[aria-checked="true"]::after { background: var(--info); }
+.switch:disabled { opacity: .4; cursor: default; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { color: var(--muted); font-size: 12px; }
+.field input, .field select { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-family: var(--f-mono); }
+.field input:focus, .field select:focus { border-color: var(--accent); outline: none; }
+.btn { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 9px 14px; cursor: pointer; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { background: var(--loss); color: var(--bg); border-color: var(--loss); }
+.btn:disabled { opacity: .45; cursor: default; }
+.confirm { display: grid; gap: 10px; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.confirm .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.note { color: var(--muted); font-size: 12px; }
+
+/* lists */
+.list { display: grid; }
+.row-item { display: grid; gap: 2px; padding: 10px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+.row-item:last-child { border-bottom: 0; }
+.row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sym { font: 600 13px/1.2 var(--f-mono); }
+.tag { font-size: 11px; font-weight: 600; border-radius: 5px; padding: 1px 7px; white-space: nowrap; }
+.tag.waiting { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.tag.triggered, .tag.traded { background: var(--gain-bg); color: var(--gain); }
+.tag.skipped { background: var(--warn-bg); color: var(--warn); }
+.tag.blocked, .tag.expired { background: var(--loss-bg); color: var(--loss); }
+.tag.short { background: var(--info-bg); color: var(--info); }
+.row-head .right { margin-left: auto; font: 500 12px var(--f-mono); }
+.row-item .txt { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.scroll { max-height: 340px; overflow-y: auto; }
+.news-item a { color: var(--fg); text-decoration: none; }
+.news-item a:hover { text-decoration: underline; }
+
+/* bottom tabs */
+.tabs { display: flex; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { border: 0; background: transparent; padding: 10px 14px; cursor: pointer; color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.filters { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); align-items: end; }
+.filters .field { min-width: 130px; }
+.filters .count { color: var(--muted); font-size: 12px; margin-left: auto; padding-bottom: 8px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.r, th.r { text-align: right; }
+tr:last-child td { border-bottom: 0; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--panel-2); }
+.log { font: 12.5px/1.55 var(--f-mono); }
+.log div { padding: 6px 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; }
+.log time { color: var(--faint); }
+.log .rule-change span { color: var(--accent); }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; padding: 6px 16px 14px; }
+.rules dl { margin: 0; }
+.rules h4 { font: 600 13px var(--f-display); margin: 12px 0 4px; color: var(--accent); }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--f-mono); text-align: right; overflow-wrap: anywhere; }
+
+/* overview */
+.ov-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.ov-card { display: grid; gap: 10px; padding: 16px; text-align: left; cursor: pointer; }
+.ov-card:hover { border-color: var(--accent); }
+.ov-card .top-row { display: flex; align-items: center; gap: 10px; }
+.ov-card h3 { font: 700 18px var(--f-display); margin: 0; }
+.ov-card .big { font: 500 24px var(--f-mono); }
+.ov-card .facts { padding: 0; border: 0; }
+
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.setup { max-width: 560px; margin: 24px auto; padding: 22px; display: grid; gap: 14px; }
+.setup h2 { font: 700 24px/1.15 var(--f-display); margin: 0; }
+.setup p { margin: 0; color: var(--muted); }
+.setup ul { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 4px; font-size: 13px; }
+.setup .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.setup .err { color: var(--loss); font-size: 13px; }
+.banner.live { background: var(--gain-bg); }
+.banner.live b { color: var(--gain); }
+.banner .link { border: 0; background: transparent; color: var(--fg); text-decoration: underline; cursor: pointer; padding: 0; margin-left: auto; font-size: 13px; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; z-index: 40; max-width: calc(100% - 32px); }
+
+/* phone: agent switcher moves to a bottom bar */
+.bottombar { display: none; }
+@media (max-width: 1100px) {
+  .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .strip .kpi:nth-child(3) { border-right: 0; }
+  .strip .kpi:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
+  .ov-cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .pnl-grid { grid-template-columns: minmax(0, 1fr); }
+  .chart { height: 300px; }
+  .stats-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats-top .kpi:nth-child(2) { border-right: 0; }
+  .stats-top .kpi:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .stats-cols { grid-template-columns: minmax(0, 1fr); }
+  .stats-cols > div + div { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (max-width: 640px) {
+  .top .agents { display: none; }
+  .bottombar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--panel-2); border-top: 1px solid var(--line);
+    padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); gap: 4px; }
+  .bottombar button { flex: 1; display: grid; justify-items: center; gap: 3px; border: 0; background: transparent; color: var(--muted); padding: 6px 2px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .bottombar button[aria-selected="true"] { color: var(--accent); background: var(--bg); }
+  main.wrap { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 560px) {
+  .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strip .kpi { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .strip .kpi:nth-child(2n) { border-right: 0; }
+  .strip .kpi:nth-child(3) { border-right: 1px solid var(--line); }
+  .strip .kpi:nth-last-child(-n+2) { border-bottom: 0; }
+  .kpi .value { font-size: 19px; }
+  .statusline h2 { font-size: 22px; }
+  .statusline .updated { margin-left: 0; width: 100%; }
+  .fields { grid-template-columns: minmax(0, 1fr); }
+  .brand small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } .flash-up, .flash-down { animation: none; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><h1>Cabina di Regia</h1><small>trading-bot · fase 1, soldi finti</small></div>
+    <nav class="agents" role="tablist" aria-label="Agente" id="agentTabs"></nav>
+    <div class="top-actions"><button class="btn-start" id="startAll">Start generale</button><button class="btn-stop" id="stopAll">Stop di emergenza</button></div>
+  </div>
+</header>
+<div class="banner" id="banner"><div class="wrap"><b>Anteprima</b><span>Tutti i numeri, i trade e le notizie qui sotto sono esempi inventati per mostrare la pagina. Nessun dato reale.</span></div></div>
+
+<main class="wrap" id="app">
+  <section class="panel setup" id="setup" hidden aria-label="Collegamento">
+    <h2>Collega la Cabina al bot</h2>
+    <p>Incolla il token che hai creato su GitHub (inizia con <code>github_pat_</code>).</p>
+    <ul>
+      <li>Resta salvato solo in questo browser, su questo dispositivo.</li>
+      <li>La pagina lo usa solo per parlare con GitHub: legge i dati del bot e salva i tuoi comandi.</li>
+      <li>Nessun altro lo vede, nemmeno Claude. Su un altro dispositivo lo reinserisci.</li>
+      <li>"Scollega", in alto, lo cancella da qui.</li>
+    </ul>
+    <div class="field"><label for="tok">Token GitHub</label><input id="tok" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></div>
+    <div class="row"><button class="btn primary" id="tokGo">Collega</button><button class="btn" id="tokPreview">Guarda l'anteprima</button></div>
+    <div class="err" id="tokErr" hidden></div>
+  </section>
+  <!-- one agent -->
+  <div id="agentView" hidden style="display:grid;gap:16px">
+    <section class="statusline">
+      <h2 id="agentName">Azioni</h2>
+      <span class="pill" id="statusPill"></span>
+      <span class="updated" id="updated"></span>
+    </section>
+    <div id="staleAlert" hidden></div>
+
+    <section class="strip" id="strip" aria-label="Conto"></section>
+
+    <div class="grid">
+      <div class="col">
+        <section class="panel" aria-label="Grafico">
+          <header><h3>Grafico del bot</h3><div class="chips" id="symChips"></div><span class="hint" id="chartHint"></span></header>
+          <div class="chart" id="chart"></div>
+          <div class="chart-legend" id="chartLegend"></div>
+        </section>
+
+        <section class="panel" aria-label="Curva del capitale">
+          <header><h3>Capitale contro il mercato</h3><span class="hint" id="eqHint"></span></header>
+          <div class="eq-chart" id="eqChart"></div>
+          <div class="facts" id="eqFacts"></div>
+          <div class="verdict" id="eqVerdict"></div>
+        </section>
+
+        <div class="pnl-grid">
+          <section class="panel" aria-label="Guadagni e perdite giornalieri">
+            <header><h3>Giorno per giorno</h3><span class="hint">ultimi 20 giorni di mercato</span></header>
+            <div class="pnl-chart" id="pnlDays"></div>
+            <div class="pnl-total" id="pnlDaysTotal"></div>
+          </section>
+          <section class="panel" aria-label="Guadagni e perdite settimanali">
+            <header><h3>Settimana per settimana</h3><span class="hint">ultime 8 settimane</span></header>
+            <div class="pnl-chart" id="pnlWeeks"></div>
+            <div class="pnl-total" id="pnlWeeksTotal"></div>
+          </section>
+        </div>
+
+        <section class="panel" aria-label="Statistiche">
+          <header><h3>Dove guadagna e dove perde</h3><span class="hint" id="statsHint"></span></header>
+          <div id="stats"></div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section class="panel" aria-label="Comandi">
+          <header><h3>Comandi</h3><span class="hint">valgono per questo agente</span></header>
+          <div class="body controls" id="controls"></div>
+        </section>
+        <section class="panel" aria-label="Criteri in tempo reale">
+          <header><h3>Cosa sta guardando</h3><span class="hint" id="sigHint"></span></header>
+          <div class="list scroll" id="signals"></div>
+        </section>
+        <section class="panel" aria-label="Notizie">
+          <header><h3>Notizie</h3><span class="hint">sui titoli che segue</span></header>
+          <div class="list scroll" id="news"></div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel" aria-label="Diario, registro e regole">
+      <div class="tabs" role="tablist" id="bottomTabs">
+        <button class="tab" role="tab" data-tab="diary" aria-selected="true">Diario</button>
+        <button class="tab" role="tab" data-tab="log" aria-selected="false">Registro</button>
+        <button class="tab" role="tab" data-tab="rules" aria-selected="false">Regole</button>
+      </div>
+      <div id="tab-diary"></div>
+      <div id="tab-log" hidden></div>
+      <div id="tab-rules" hidden></div>
+    </section>
+  </div>
+
+  <!-- all agents -->
+  <div id="allView" hidden style="display:grid;gap:16px">
+    <section class="statusline"><h2>Tutti gli agenti</h2><span class="updated" id="allUpdated"></span></section>
+    <section class="strip" id="allStrip" aria-label="Totale"></section>
+    <div class="ov-cards" id="ovCards"></div>
+    <section class="panel" aria-label="Capitale dei tre agenti">
+      <header><h3>Capitale a confronto</h3><span class="hint">fine giornata, ogni agente partito dal suo budget</span></header>
+      <div class="eq-chart" id="allChart"></div>
+      <div class="chart-legend" id="allLegend"></div>
+    </section>
+    <section class="panel" aria-label="Confronto">
+      <header><h3>Confronto</h3></header>
+      <div class="table-wrap" id="allTable"></div>
+    </section>
+  </div>
+</main>
+
+<nav class="bottombar" role="tablist" aria-label="Agente" id="bottomBar"></nav>
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+"use strict";
+/* ------------------------------------------------------------------ sample data
+   Shaped exactly like trader/agents/<agent>/dashboard.json, so the real page only swaps the source.
+   The diary, the P&L charts, the equity curve and the stats are built from the same sample trades. */
+let PREVIEW = true;
+const PREVIEW_NOW = Date.parse("2026-11-09T16:44:00Z");
+const SAMPLE = (() => {
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const OPEN = Date.UTC(2026, 10, 9, 14, 30) / 1000;          // 9:30 New York on a winter day
+  const r2 = (x) => Math.round(x * 100) / 100;
+  function bars(p0, n, vol, drift, start = OPEN, step = 300) {
+    const out = []; let p = p0;
+    for (let i = 0; i < n; i++) {
+      const o = p, c = Math.max(1, o * (1 + (rnd() - .5) * vol + drift));
+      const h = Math.max(o, c) * (1 + rnd() * vol * .45), l = Math.min(o, c) * (1 - rnd() * vol * .45);
+      out.push([start + i * step, r2(o), r2(h), r2(l), r2(c), Math.round(2e5 + rnd() * 8e5)]);
+      p = c;
+    }
+    return out;
+  }
+  function marketDays(n) {
+    const out = []; const d = new Date(Date.UTC(2026, 10, 9));
+    while (out.length < n) {
+      d.setUTCDate(d.getUTCDate() - 1);
+      if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+      out.unshift(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }
+  // past trades: a realistic mix of stops (-1R), targets (+2R) and closes at the end of the day
+  function history(n, syms, risk, bias, shortOk) {
+    const days = marketDays(n), out = [];
+    days.forEach((date) => {
+      const k = rnd() < .25 ? 0 : rnd() < .6 ? 1 : 2;
+      for (let i = 0; i < k; i++) {
+        const sym = syms[Math.floor(rnd() * syms.length)];
+        const side = shortOk && rnd() < .35 ? "sell" : "buy";
+        const u = rnd() + bias;
+        const R = u < .5 ? -1.02 : u < .78 ? 2 : r2((rnd() - .45) * 1.4);
+        const hh = [9, 10, 10, 10, 11, 11, 12, 13, 14][Math.floor(rnd() * 9)];
+        const mm = hh === 9 ? 50 + Math.floor(rnd() * 2) * 5 : Math.floor(rnd() * 12) * 5;
+        const px = r2(50 + rnd() * 600), rps = r2(px * (.006 + rnd() * .01));
+        const qty = Math.max(1, Math.floor(risk / rps));
+        const net = r2(R * rps * qty - 2);
+        const exit = R <= -1 ? "stop" : R >= 2 ? "target" : "flat_by";
+        out.push({ date, symbol: sym, side, qty, entry_time: String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"),
+          entry_fill: px, stop: side === "buy" ? r2(px - rps) : r2(px + rps), target: side === "buy" ? r2(px + 2 * rps) : r2(px - 2 * rps),
+          exit_time: exit === "flat_by" ? "15:55" : String(hh + 1).padStart(2, "0") + ":" + String(mm).padStart(2, "0"),
+          exit_fill: r2(side === "buy" ? px + R * rps : px - R * rps), exit_reason: exit, net_pnl: net, r_multiple: r2(R), status: "closed" });
+      }
+    });
+    return out;
+  }
+  function daysOf(trades) {
+    const by = new Map(); trades.filter((t) => t.status === "closed").forEach((t) => by.set(t.date, r2((by.get(t.date) || 0) + t.net_pnl)));
+    return [...by].sort().map(([date, net]) => ({ date, net }));
+  }
+  function curveOf(start, days, now, nowDate) {
+    const pts = []; let eq = start;
+    days.forEach((d) => { eq = r2(eq + d.net); pts.push({ date: d.date, equity: eq }); });
+    if (pts.length && pts[pts.length - 1].date === nowDate) pts[pts.length - 1].equity = now; else pts.push({ date: nowDate, equity: now });
+    let peak = start, pd = null, worst = { abs: 0, pct: 0, peak_date: null, date: null };
+    pts.forEach((p) => { if (p.equity > peak) { peak = p.equity; pd = p.date; } const dd = p.equity - peak;
+      if (dd < worst.abs) worst = { abs: r2(dd), pct: r2(100 * dd / peak), peak_date: pd, date: p.date }; });
+    return [pts, worst];
+  }
+  function bench(symbol, start, dates, drift, vol) {
+    let v = 100; const series = dates.map((date) => { v *= 1 + drift + (rnd() - .5) * vol; return { date, equity: r2(start * v / 100) }; });
+    series[0].equity = start;
+    return { symbol, since: dates[0], start_price: 100, last_price: r2(v), pct: r2((series[series.length - 1].equity / start - 1) * 100), series };
+  }
+  function statsOf(trades) {
+    const c = trades.filter((t) => t.status === "closed"), w = c.filter((t) => t.net_pnl > 0);
+    const rs = c.map((t) => t.r_multiple);
+    return { closed: c.length, wins: w.length, losses: c.length - w.length, win_rate: c.length ? r2(100 * w.length / c.length) : null,
+      net: r2(c.reduce((a, t) => a + t.net_pnl, 0)), costs: c.length * 2, avg_r: rs.length ? r2(rs.reduce((a, b) => a + b, 0) / rs.length) : null };
+  }
+  function build(o) {
+    const today = "2026-11-09", weekStart = "2026-11-09";
+    const all = [...o.today, ...o.past];
+    const days = daysOf(all);
+    const closedNet = r2(all.filter((t) => t.status === "closed").reduce((a, t) => a + t.net_pnl, 0));
+    const openPnl = r2(o.open.reduce((a, t) => a + (t.side === "buy" ? 1 : -1) * (t.last_price - t.entry_fill) * t.qty, 0));
+    const equity = r2(o.start + closedNet + openPnl);
+    const [curve, dd] = curveOf(o.start, days, equity, today);
+    const wk = all.filter((t) => t.date >= weekStart && t.status === "closed");
+    return Object.assign({
+      date: today, days, equity_curve: curve, drawdown: dd,
+      benchmark: bench(o.benchSym, o.start, curve.map((p) => p.date), o.benchDrift, o.benchVol),
+      account: { start: o.start, equity, cash: r2(equity - o.open.reduce((a, t) => a + t.qty * t.last_price, 0)), pnl_total: r2(equity - o.start),
+                 pnl_today: r2(o.today.filter((t) => t.status === "closed").reduce((a, t) => a + t.net_pnl, 0)), pnl_week: r2(wk.reduce((a, t) => a + t.net_pnl, 0)) },
+      stats: { today: statsOf(o.today), week: statsOf(wk), all: statsOf(all) },
+      trades: [...o.open, ...o.today.filter((t) => t.status === "closed"), ...o.past.slice().reverse()],
+    }, o.rest);
+  }
+  const t = (h, m) => OPEN + ((h - 9) * 60 + m - 30) * 60;
+
+  const STOCK_WL = ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AMD","AVGO","NFLX","JPM","BAC","XOM","COST","WMT","UBER","PLTR","COIN","MU","INTC"];
+  const stockBars = { AAPL: bars(348.1, 26, .004, .0003), TSLA: bars(361.2, 26, .008, .0006), NVDA: bars(186.4, 26, .007, -.0004), MSFT: bars(512.3, 26, .004, 0) };
+  const aaplOpen = { id: "o1", date: "2026-11-09", symbol: "AAPL", side: "buy", qty: 10, entry_time: "10:25", entry_fill: 350.37, stop: 347.56, target: 355.93,
+                     last_price: stockBars.AAPL[25][4], max_loss: 28.1, status: "open", _t: stockBars.AAPL[11][0] };
+  const stocksToday = [
+    { date: "2026-11-09", symbol: "TSLA", side: "buy", qty: 8, entry_time: "09:55", entry_fill: 364.2, stop: 358.32, target: 375.9, exit_time: "11:05", exit_fill: 375.9, exit_reason: "target", net_pnl: 91.6, r_multiple: 2.0, status: "closed", _t: stockBars.TSLA[5][0], _tx: stockBars.TSLA[19][0] },
+    { date: "2026-11-09", symbol: "NVDA", side: "buy", qty: 13, entry_time: "10:00", entry_fill: 188.1, stop: 184.4, target: 195.5, exit_time: "10:40", exit_fill: 184.38, exit_reason: "stop", net_pnl: -49.1, r_multiple: -1.01, status: "closed", _t: stockBars.NVDA[6][0], _tx: stockBars.NVDA[14][0] }
+  ];
+  const baseRules = { budget: 5000, max_loss_per_trade_usd: 50, max_daily_loss_usd: 150, max_trades_per_day: 3, min_reward_risk: 1, allow_short: false,
+                      no_entries_before: "09:45", no_entries_after: "15:30", flat_by: "15:55", cash_buffer_pct: 10, max_position_pct: 75 };
+  const baseStrategy = { setup: "rottura del range d'apertura, 15 minuti, candele da 5 minuti", stop: "or-mid", target: "2R", watchlist: STOCK_WL,
+                         slippage_per_share: 0.02, commission_per_share: 0.005, commission_min: 1, max_entry_age_minutes: 15 };
+  const stocks = build({
+    start: 5000, today: stocksToday, past: history(30, STOCK_WL, 48, .03, false), open: [aaplOpen], benchSym: "SPY", benchDrift: .0006, benchVol: .016,
+    rest: {
+      agent: "stocks", name: "Azioni", status: "running", status_label: "Attivo", paused: false, updated_at: "2026-11-09T16:40:00Z",
+      risk: { max_loss_per_trade: 50, max_daily_loss: 150, used_today: 124.3, open_risk: 28.1, trades_today: 3, max_trades_per_day: 3 },
+      bars: stockBars, open: [aaplOpen], rules: baseRules, strategy: baseStrategy,
+      signals: [
+        { symbol: "AAPL", side: "buy", status: "traded", level: 350.12, last: 351.04, distance_pct: 0.26, text: "long aperto alle 10:25: sopra il massimo del range 9:30–9:45" },
+        { symbol: "TSLA", side: "buy", status: "traded", level: 362.18, last: 371.6, distance_pct: 2.6, text: "long chiuso al target (+91,60)" },
+        { symbol: "NVDA", side: "buy", status: "traded", level: 187.9, last: 184.2, distance_pct: -1.97, text: "long chiuso allo stop (−49,10)" },
+        { symbol: "MSFT", side: "buy", status: "waiting", level: 514.8, last: 512.9, distance_pct: -0.37, text: "ultima chiusura 512,90, mancano 1,90 al massimo del range 514,80" },
+        { symbol: "META", side: "buy", status: "waiting", level: 742.1, last: 731.5, distance_pct: -1.43, text: "ultima chiusura 731,50, mancano 10,60 al massimo del range" },
+        { symbol: "AMD", side: "buy", status: "skipped", level: 248.3, last: 252.1, distance_pct: 1.53, text: "scattato alle 9:50 ma visto 20 minuti dopo: saltato" },
+        { symbol: "COIN", side: "buy", status: "blocked", level: 301.4, last: 304.0, distance_pct: 0.86, text: "bloccato da trader-risk: 3 trade su 3 oggi" },
+        { symbol: "AMZN", side: "buy", status: "waiting", level: 238.7, last: 236.9, distance_pct: -0.75, text: "ultima chiusura 236,90, mancano 1,80 al massimo del range" }
+      ],
+      news: [
+        { symbol: "TSLA", time: 0, headline: "Esempio: Tesla rivede le consegne del trimestre, il titolo sale in apertura", source: "Esempio" },
+        { symbol: "NVDA", time: 0, headline: "Esempio: i fornitori di chip rallentano dopo i dati sugli ordini", source: "Esempio" },
+        { symbol: "AAPL", time: 0, headline: "Esempio: nuovo record per i servizi nel trimestre", source: "Esempio" },
+        { symbol: "MSFT", time: 0, headline: "Esempio: accordo cloud con un grande gruppo bancario", source: "Esempio" }
+      ],
+      events: [
+        ["09:52", "regole cambiate: perdita max a trade: 40 -> 50, trade al giorno: 2 -> 3"],
+        ["09:55", "TSLA long APERTO: 8 @ 364,20, stop 358,32, target 375,90"], ["10:00", "NVDA long APERTO: 13 @ 188,10, stop 184,40, target 195,50"],
+        ["10:10", "AMD: scattato alle 9:50 ma visto 20 minuti dopo: saltato"], ["10:25", "COIN: BLOCCATO da trader-risk: 3 trade su 3 oggi"],
+        ["10:25", "AAPL long APERTO: 10 @ 350,37 (segnale 350,35), stop 347,56, target 355,93, perdita max 28,10"],
+        ["10:40", "NVDA long chiuso: stop a 184,38, netto −49,10"], ["11:05", "TSLA long chiuso: target a 375,90, netto +91,60"]
+      ].map(([at, text]) => ({ at: "2026-11-09 " + at, text }))
+    }
+  });
+
+  const ETF_WL = ["SPY","QQQ","IWM","DIA","XLK","XLF","XLE","XLV","XLY","XLI","SMH","XBI","KRE","GLD","SLV","TLT","ARKK","XOP"];
+  const etfBars = { QQQ: bars(612.4, 26, .003, -.0004), SPY: bars(681.2, 26, .0025, -.0002), XLE: bars(91.3, 26, .005, .0005) };
+  const qqqOpen = { id: "o2", date: "2026-11-09", symbol: "QQQ", side: "sell", qty: 6, entry_time: "10:15", entry_fill: 609.8, stop: 615.05, target: 599.3,
+                    last_price: 607.8, max_loss: 31.5, status: "open", _t: etfBars.QQQ[9][0] };
+  const etf = build({
+    start: 5000, open: [qqqOpen], past: history(30, ETF_WL, 38, -.02, true), benchSym: "SPY", benchDrift: .0006, benchVol: .016,
+    today: [{ date: "2026-11-09", symbol: "XLE", side: "buy", qty: 30, entry_time: "09:50", entry_fill: 91.95, stop: 91.1, target: 93.65, exit_time: "11:30", exit_fill: 91.6, exit_reason: "flat_by", net_pnl: -12.3, r_multiple: -0.41, status: "closed", _t: etfBars.XLE[4][0], _tx: etfBars.XLE[24][0] }],
+    rest: {
+      agent: "etf", name: "ETF", status: "paused", status_label: "In pausa: gestisce i trade aperti, non ne apre di nuovi", paused: true,
+      updated_at: "2026-11-09T16:12:00Z",
+      risk: { max_loss_per_trade: 40, max_daily_loss: 120, used_today: 63.0, open_risk: 31.5, trades_today: 2, max_trades_per_day: 3 },
+      bars: etfBars, open: [qqqOpen], rules: Object.assign({}, baseRules, { max_loss_per_trade_usd: 40, max_daily_loss_usd: 120, allow_short: true }),
+      strategy: Object.assign({}, baseStrategy, { watchlist: ETF_WL }),
+      signals: [
+        { symbol: "QQQ", side: "sell", status: "traded", level: 610.9, last: 607.8, distance_pct: 0.51, text: "short aperto alle 10:15: sotto il minimo del range 9:30–9:45" },
+        { symbol: "XLE", side: "buy", status: "traded", level: 91.9, last: 91.4, distance_pct: -0.54, text: "long chiuso a fine giornata (−12,30)" },
+        { symbol: "SPY", side: "sell", status: "waiting", level: 678.2, last: 679.9, distance_pct: 0.25, text: "ultima chiusura 679,90, 1,70 sopra il minimo del range 678,20" },
+        { symbol: "GLD", side: "buy", status: "waiting", level: 384.6, last: 382.1, distance_pct: -0.65, text: "ultima chiusura 382,10, mancano 2,50 al massimo del range" }
+      ],
+      news: [ { symbol: "QQQ", time: 0, headline: "Esempio: i titoli tecnologici aprono in calo dopo i rendimenti in salita", source: "Esempio" },
+              { symbol: "XLE", time: 0, headline: "Esempio: petrolio stabile in attesa delle scorte settimanali", source: "Esempio" } ],
+      events: [ ["09:50", "XLE long APERTO: 30 @ 91,95, stop 91,10, target 93,65"], ["10:15", "QQQ SHORT APERTO: 6 @ 609,80, stop 615,05, target 599,30"],
+                ["11:30", "regole cambiate: pausa: no -> si"], ["11:30", "XLE long chiuso: fine giornata a 91,60, netto −12,30"] ].map(([at, text]) => ({ at: "2026-11-09 " + at, text }))
+    }
+  });
+
+  const C0 = Date.UTC(2026, 10, 9, 6, 0) / 1000;
+  const crypto = build({
+    start: 5000, open: [], today: [], past: [], benchSym: "BTC-USD", benchDrift: .001, benchVol: .03,
+    rest: {
+      agent: "crypto", name: "Crypto", status: "building", status_label: "In costruzione: motore 24/7 in arrivo", paused: false, updated_at: "2026-11-09T16:40:00Z",
+      risk: { max_loss_per_trade: 50, max_daily_loss: 150, used_today: 0, open_risk: 0, trades_today: 0, max_trades_per_day: 3 },
+      open: [], rules: Object.assign({}, baseRules, { no_entries_before: "-", no_entries_after: "-", flat_by: "-" }),
+      strategy: Object.assign({}, baseStrategy, { setup: "da definire (mercato aperto 24 ore su 24)", watchlist: ["BTC-USD", "ETH-USD", "SOL-USD"] }),
+      bars: { "BTC-USD": bars(97400, 60, .004, .0002, C0, 900), "ETH-USD": bars(3420, 60, .006, .0001, C0, 900), "SOL-USD": bars(212, 60, .009, -.0003, C0, 900) },
+      signals: ["BTC-USD", "ETH-USD", "SOL-USD"].map((s) => ({ symbol: s, status: "waiting", text: "strategia crypto da definire" })),
+      news: [], events: [ { at: "2026-11-09 06:00", text: "Agente Crypto in costruzione: per ora mostra solo i grafici di esempio" } ]
+    }
+  });
+  crypto.equity_curve = []; crypto.benchmark = null;
+  return { stocks, etf, crypto };
+})();
+
+/* ------------------------------------------------------------------ helpers */
+const $ = (id) => document.getElementById(id);
+const AGENTS = [["all", "Tutti", "tutti"], ["stocks", "Azioni", "azioni"], ["etf", "ETF", "etf"], ["crypto", "Crypto", "crypto"]];
+const REAL = ["stocks", "etf", "crypto"];
+const nf = (n, d = 2) => Number(n).toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d });
+const usd = (n) => (n < 0 ? "−$" : "$") + nf(Math.abs(n));
+const signed = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + "$" + nf(Math.abs(n));
+const pct = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + nf(Math.abs(n)) + "%";
+const cls = (n) => (n > 0 ? "gain" : n < 0 ? "loss" : "");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const STATUS = { running: "Attivo", paused: "In pausa", closed: "Mercato chiuso", building: "In costruzione" };
+const SIG = { waiting: "In attesa", triggered: "Scattato", traded: "Operato", skipped: "Saltato", blocked: "Bloccato", expired: "Scaduto", "no-data": "Senza dati", error: "Errore" };
+const REASON = { target: "target", stop: "stop", "stop (gap)": "stop (gap)", flat_by: "fine giornata", "stale (missed flat_by)": "chiuso in ritardo" };
+const NY_OFFSET = -5 * 3600;                         // shown in New York time (winter); crypto shows UTC
+const STALE_MIN = 20;
+const C = getComputedStyle(document.documentElement);
+const tok = (n) => C.getPropertyValue(n).trim();
+const now = () => (PREVIEW ? PREVIEW_NOW : Date.now());
+
+let state = { agent: "stocks", sym: null, data: SAMPLE, tab: "diary", filter: { res: "all", sym: "all", period: "all" }, ready: false };
+let charts = [];
+
+function toast(msg) {
+  const el = $("toast"); el.textContent = msg; el.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => (el.hidden = true), 3200);
+}
+function minutesOld(d) { return Math.round((now() - Date.parse(d.updated_at)) / 60000); }
+function isStale(d) {
+  if (!(d.status === "running" || d.status === "paused") || minutesOld(d) <= STALE_MIN) return false;
+  return PREVIEW || marketOpenNow();
+}
+/* New York time without a time-zone library */
+const NYF = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short" });
+function nyParts(ms) { const o = {}; NYF.formatToParts(new Date(ms)).forEach((p) => (o[p.type] = p.value)); return o; }
+function nyOffset(sec) {               // seconds to add to UTC to get New York wall time (-18000 or -14400)
+  const p = nyParts(sec * 1000);
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1000) - sec;
+}
+function nyEpoch(date, hhmm) {          // "2026-11-09", "10:15" New York -> UTC seconds
+  const [y, m, d] = date.split("-").map(Number), [h, mi] = hhmm.split(":").map(Number);
+  const guess = Date.UTC(y, m - 1, d, h, mi) / 1000;
+  return guess - nyOffset(guess);
+}
+function marketOpenNow() {
+  const p = nyParts(Date.now()), mins = +p.hour * 60 + +p.minute;
+  return !["Sat", "Sun"].includes(p.weekday) && mins >= 9 * 60 + 35 && mins <= 16 * 60 + 5;
+}
+function dotOf(d) { return !d ? "closed" : isStale(d) ? "stale" : d.status; }
+
+/* ------------------------------------------------------------------ agent navigation */
+function navButtons(compact) {
+  return AGENTS.map(([key, name]) => {
+    const d = key === "all" ? null : state.data[key];
+    const dot = key === "all" ? (REAL.some((k) => isStale(state.data[k])) ? "stale" : "all") : dotOf(d);
+    return compact
+      ? `<button role="tab" data-agent="${key}" aria-selected="${key === state.agent}"><span class="dot ${dot}"></span>${name}</button>`
+      : `<button class="agent-tab" role="tab" data-agent="${key}" aria-selected="${key === state.agent}"><span class="dot ${dot}"></span>${name}</button>`;
+  }).join("");
+}
+function renderNav() {
+  $("agentTabs").innerHTML = navButtons(false);
+  $("bottomBar").innerHTML = navButtons(true);
+  document.querySelectorAll("#agentTabs button, #bottomBar button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
+}
+function selectAgent(key, push) {
+  state.agent = key; state.sym = null;
+  if (push) history.replaceState(null, "", "#" + AGENTS.find((a) => a[0] === key)[2]);
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+/* ------------------------------------------------------------------ render */
+function render() {
+  if (!$("setup").hidden) return;
+  renderNav();
+  clearCharts();
+  const all = state.agent === "all";
+  $("agentView").hidden = all; $("allView").hidden = !all;
+  $("agentView").style.display = all ? "none" : "grid"; $("allView").style.display = all ? "grid" : "none";
+  if (all) return renderAll();
+  const d = state.data[state.agent];
+  $("agentName").textContent = d.name;
+  const pill = $("statusPill"); pill.className = "pill " + d.status; pill.textContent = STATUS[d.status] || d.status; pill.title = d.status_label;
+  $("updated").textContent = "Aggiornato " + new Date(d.updated_at).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + d.status_label;
+  const st = $("staleAlert");
+  st.hidden = !isStale(d);
+  st.innerHTML = isStale(d) ? `<div class="alert"><span>⚠</span><div><b>Il bot non aggiorna da ${minutesOld(d)} minuti.</b> In orario di mercato dovrebbe farlo ogni 5–15. Controlla GitHub Actions: un giro può essere in ritardo o fallito. I numeri qui sotto sono quelli dell'ultimo aggiornamento.</div></div>` : "";
+  renderStrip(d); renderChart(d); renderEquity(d); renderPnl(d); renderStats(d); renderControls(d); renderSignals(d); renderNews(d); renderBottom(d);
+}
+
+function renderStrip(d) {
+  const a = d.account, r = d.risk;
+  const usedPct = r.max_daily_loss ? Math.min(100, 100 * r.used_today / r.max_daily_loss) : 0;
+  const lvl = usedPct >= 85 ? "high" : usedPct >= 60 ? "mid" : "";
+  const pctTot = a.start ? 100 * a.pnl_total / a.start : 0;
+  $("strip").innerHTML = `
+    <div class="kpi"><div class="label">Capitale</div><div class="value" id="kEquity">${usd(a.equity)}</div><div class="sub">partito da ${usd(a.start)}</div></div>
+    <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(a.pnl_today)}">${signed(a.pnl_today)}</div><div class="sub">${d.stats.today.closed} chiusi, ${d.open.length} aperti</div></div>
+    <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(a.pnl_week)}">${signed(a.pnl_week)}</div><div class="sub">${d.stats.week.closed} trade, ${d.stats.week.win_rate == null ? "–" : nf(d.stats.week.win_rate, 0) + "% vinti"}</div></div>
+    <div class="kpi"><div class="label">Totale</div><div class="value ${cls(a.pnl_total)}">${signed(a.pnl_total)}</div><div class="sub">${pct(pctTot)} · ${d.stats.all.closed} trade</div></div>
+    <div class="kpi"><div class="label">Rischio usato oggi</div><div class="value">${usd(r.used_today)}</div><div class="sub">su ${usd(r.max_daily_loss)} al giorno · aperto ${usd(r.open_risk)}</div><div class="meter"><i class="${lvl}" style="width:${usedPct}%"></i></div></div>
+    <div class="kpi"><div class="label">Trade oggi</div><div class="value">${r.trades_today} / ${r.max_trades_per_day}</div><div class="sub">max ${usd(r.max_loss_per_trade)} a trade</div><div class="meter"><i class="${r.trades_today >= r.max_trades_per_day ? "high" : ""}" style="width:${Math.min(100, 100 * r.trades_today / (r.max_trades_per_day || 1))}%"></i></div></div>`;
+}
+
+function clearCharts() { charts.forEach((c) => c.remove()); charts = []; }
+function baseChart(el, opts = {}) {
+  const ch = LightweightCharts.createChart(el, Object.assign({
+    autoSize: true,
+    layout: { background: { type: "solid", color: tok("--panel") }, textColor: tok("--muted"), fontFamily: tok("--f-mono"), fontSize: 11 },
+    grid: { vertLines: { color: tok("--line") }, horzLines: { color: tok("--line") } },
+    rightPriceScale: { borderColor: tok("--line") },
+    timeScale: { borderColor: tok("--line"), timeVisible: true, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: { vertTouchDrag: false },
+  }, opts));
+  charts.push(ch);
+  return ch;
+}
+
+let liveSeries = null;
+function renderChart(d) {
+  const syms = Object.keys(d.bars || {});
+  const el = $("chart"); el.innerHTML = ""; liveSeries = null;
+  if (!syms.length) { el.innerHTML = '<div class="empty">Nessun grafico: il bot non ha ancora letto dati oggi.</div>'; $("symChips").innerHTML = ""; $("chartLegend").innerHTML = ""; return; }
+  if (!state.sym || !syms.includes(state.sym)) state.sym = syms[0];
+  $("symChips").innerHTML = syms.map((s) => `<button class="chip" aria-pressed="${s === state.sym}" data-sym="${s}">${s}</button>`).join("");
+  $("symChips").querySelectorAll("button").forEach((b) => b.onclick = () => { state.sym = b.dataset.sym; render(); });
+  const isCrypto = d.agent === "crypto";
+  const shift = isCrypto ? 0 : PREVIEW ? NY_OFFSET : nyOffset(d.bars[state.sym][0][0]);
+  $("chartHint").textContent = isCrypto ? "candele da 15 minuti · ora UTC" : "candele da 5 minuti · ora di New York";
+  const ch = baseChart(el);
+  const s = ch.addCandlestickSeries({ upColor: tok("--gain"), downColor: tok("--loss"), borderVisible: false, wickUpColor: tok("--gain"), wickDownColor: tok("--loss") });
+  s.setData(d.bars[state.sym].map(([t, o, h, l, c]) => ({ time: t + shift, open: o, high: h, low: l, close: c })));
+  liveSeries = { s, shift, sym: state.sym };
+  const mine = d.trades.filter((t) => t.symbol === state.sym && t.date === d.date).map(withTimes).filter((t) => t._t);
+  const markers = [];
+  mine.forEach((t) => {
+    const long = t.side === "buy";
+    markers.push({ time: t._t + shift, position: long ? "belowBar" : "aboveBar", color: long ? tok("--gain") : tok("--info"),
+                   shape: long ? "arrowUp" : "arrowDown", text: (long ? "Long " : "Short ") + t.qty + " @ " + nf(t.entry_fill) });
+    if (t.status === "closed" && t._tx) markers.push({ time: t._tx + shift, position: long ? "aboveBar" : "belowBar", color: t.net_pnl >= 0 ? tok("--gain") : tok("--loss"),
+                   shape: "circle", text: (REASON[t.exit_reason] || t.exit_reason) + " " + signed(t.net_pnl) });
+  });
+  markers.sort((a, b) => a.time - b.time);
+  s.setMarkers(markers);
+  const open = d.open.find((t) => t.symbol === state.sym);
+  if (open) {
+    s.createPriceLine({ price: open.entry_fill, color: tok("--muted"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entrata" });
+    s.createPriceLine({ price: open.stop, color: tok("--loss"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "stop" });
+    s.createPriceLine({ price: open.target, color: tok("--gain"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "target" });
+  } else {
+    const sig = d.signals.find((x) => x.symbol === state.sym);
+    if (sig && sig.level) s.createPriceLine({ price: sig.level, color: tok("--accent"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "livello d'ingresso" });
+  }
+  renderLegend(d);
+  ch.timeScale().fitContent();
+}
+function withTimes(t) {
+  // the engine stores New York times; a marker sits on the bar that triggered (5 minutes before its close)
+  if (t._t || !t.entry_time) return t;
+  const out = Object.assign({}, t, { _t: nyEpoch(t.date, t.entry_time) - 300 });
+  if (t.exit_time) out._tx = nyEpoch(t.date, t.exit_time) - (t.exit_reason === "flat_by" ? 0 : 300);
+  return out;
+}
+function renderLegend(d, flash) {
+  const open = d.open.find((t) => t.symbol === state.sym);
+  const mine = d.trades.filter((t) => t.symbol === state.sym && t.date === d.date);
+  const legend = [];
+  if (open) {
+    const pnl = (open.side === "buy" ? 1 : -1) * (open.last_price - open.entry_fill) * open.qty;
+    legend.push(`<span><b>${open.side === "buy" ? "Long" : "Short"} aperto</b> ${open.qty} @ ${nf(open.entry_fill)} · ora <b class="live ${flash || open._flash || ""}">${nf(open.last_price)}</b> · <b class="${cls(pnl)}">${signed(pnl)}</b></span>`);
+    legend.push(`<span><i style="background:${tok("--loss")}"></i>stop ${nf(open.stop)}</span><span><i style="background:${tok("--gain")}"></i>target ${nf(open.target)}</span>`);
+  } else {
+    const sig = d.signals.find((x) => x.symbol === state.sym);
+    if (sig && sig.level) legend.push(`<span><i style="background:${tok("--accent")}"></i>livello d'ingresso ${nf(sig.level)} · ${esc(sig.text)}</span>`);
+    else if (sig) legend.push(`<span>${esc(sig.text)}</span>`);
+  }
+  if (!legend.length && !mine.length) legend.push("<span>Nessun trade su questo titolo oggi.</span>");
+  $("chartLegend").innerHTML = legend.join("");
+}
+
+/* equity curve against the benchmark */
+function renderEquity(d) {
+  const el = $("eqChart"); el.innerHTML = "";
+  const curve = d.equity_curve || [];
+  if (curve.length < 2) {
+    el.innerHTML = '<div class="empty">La curva compare dopo i primi giorni di trading.</div>'; $("eqFacts").innerHTML = ""; $("eqVerdict").innerHTML = ""; $("eqHint").textContent = ""; return;
+  }
+  const b = d.benchmark;
+  $("eqHint").textContent = b ? "contro " + b.symbol + " comprato e tenuto dal " + b.since.split("-").reverse().join("/") : "";
+  const ch = baseChart(el, { timeScale: { borderColor: tok("--line"), timeVisible: false }, handleScroll: false, handleScale: false });
+  const area = ch.addAreaSeries({ lineColor: tok("--accent"), topColor: "rgba(242,181,68,.28)", bottomColor: "rgba(242,181,68,0)", lineWidth: 2,
+                                  priceFormat: { type: "price", precision: 0, minMove: 1 } });
+  area.setData(curve.map((p) => ({ time: p.date, value: p.equity })));
+  area.createPriceLine({ price: d.account.start, color: tok("--faint"), lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: "partenza" });
+  if (b) {
+    const bl = ch.addLineSeries({ color: tok("--bench"), lineWidth: 2, lineStyle: 0, priceLineVisible: false, lastValueVisible: true });
+    bl.setData(b.series.map((p) => ({ time: p.date, value: p.equity })));
+  }
+  ch.timeScale().fitContent();
+  const botPct = 100 * (d.account.equity / curve[0].equity - 1);
+  const dd = d.drawdown || { abs: 0, pct: 0 };
+  $("eqFacts").innerHTML = `
+    <div><small>Bot</small><b class="${cls(botPct)}">${pct(botPct)}</b></div>
+    ${b ? `<div><small>${esc(b.symbol)} comprato e tenuto</small><b class="${cls(b.pct)}">${pct(b.pct)}</b></div>
+           <div><small>Differenza</small><b class="${cls(botPct - b.pct)}">${pct(botPct - b.pct)}</b></div>` : ""}
+    <div><small>Peggior calo dal picco</small><b class="${dd.abs < 0 ? "loss" : ""}">${dd.abs < 0 ? signed(dd.abs) + " (" + pct(dd.pct) + ")" : "nessuno"}</b></div>
+    <div><small>Legenda</small><b style="font:500 12px var(--f-body);color:var(--muted)"><span style="color:var(--accent)">━</span> bot &nbsp; <span style="color:var(--bench)">━</span> ${b ? esc(b.symbol) : "mercato"}</b></div>`;
+  $("eqVerdict").innerHTML = !b ? "" : botPct > b.pct
+    ? `<b>Il bot batte il mercato</b> di ${nf(botPct - b.pct)} punti in questo periodo. Pochi giorni dicono poco: serve una serie lunga.`
+    : `<b>Il bot fa peggio del mercato</b> di ${nf(b.pct - botPct)} punti: comprare ${esc(b.symbol)} e tenerlo sarebbe andato meglio.`;
+}
+
+function weeks(days) {
+  const by = new Map();
+  days.forEach(({ date, net }) => {
+    const d = new Date(date + "T00:00:00Z"); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow);
+    const k = d.toISOString().slice(0, 10); by.set(k, (by.get(k) || 0) + net);
+  });
+  return [...by].map(([date, net]) => ({ date, net: +net.toFixed(2) })).slice(-8);
+}
+function pnlChart(el, rows, totalEl, unit) {
+  el.innerHTML = "";
+  if (!rows.length) { el.innerHTML = '<div class="empty">Ancora nessun trade chiuso.</div>'; totalEl.textContent = ""; return; }
+  const ch = baseChart(el, { timeScale: { borderColor: tok("--line"), timeVisible: false }, handleScroll: false, handleScale: false });
+  const s = ch.addHistogramSeries({ priceFormat: { type: "price", precision: 2, minMove: .01 } });
+  s.setData(rows.map((r) => ({ time: r.date, value: r.net, color: r.net >= 0 ? tok("--gain") : tok("--loss") })));
+  ch.timeScale().fitContent();
+  const won = rows.filter((r) => r.net > 0).length, sum = rows.reduce((a, r) => a + r.net, 0);
+  const best = Math.max(...rows.map((r) => r.net)), worst = Math.min(...rows.map((r) => r.net));
+  totalEl.innerHTML = `<span>${won} ${unit} positivi su ${rows.length}</span><span>somma <b class="${cls(sum)}">${signed(sum)}</b></span><span>migliore <b class="gain">${signed(best)}</b></span><span>peggiore <b class="loss">${signed(worst)}</b></span>`;
+}
+function renderPnl(d) {
+  pnlChart($("pnlDays"), d.days.slice(-20), $("pnlDaysTotal"), "giorni");
+  pnlChart($("pnlWeeks"), weeks(d.days), $("pnlWeeksTotal"), "settimane");
+}
+
+/* advanced stats, computed from the diary */
+function renderStats(d) {
+  const c = d.trades.filter((t) => t.status === "closed");
+  $("statsHint").textContent = c.length ? c.length + " trade chiusi" : "";
+  if (c.length < 3) { $("stats").innerHTML = '<div class="empty">Le statistiche compaiono dopo qualche trade chiuso.</div>'; return; }
+  const wins = c.filter((t) => t.net_pnl > 0), losses = c.filter((t) => t.net_pnl <= 0);
+  const gw = wins.reduce((a, t) => a + t.net_pnl, 0), gl = -losses.reduce((a, t) => a + t.net_pnl, 0);
+  const pf = gl > 0 ? gw / gl : null;
+  let run = 0, maxRun = 0;
+  c.slice().sort((a, b) => (a.date + a.entry_time).localeCompare(b.date + b.entry_time)).forEach((t) => { run = t.net_pnl <= 0 ? run + 1 : 0; maxRun = Math.max(maxRun, run); });
+  const exp = (gw - gl) / c.length;
+  const bySym = new Map();
+  c.forEach((t) => { const s = bySym.get(t.symbol) || { n: 0, w: 0, net: 0 }; s.n++; if (t.net_pnl > 0) s.w++; s.net += t.net_pnl; bySym.set(t.symbol, s); });
+  const syms = [...bySym].sort((a, b) => b[1].net - a[1].net);
+  const byHour = new Map();
+  c.forEach((t) => { const h = t.entry_time.slice(0, 2); const s = byHour.get(h) || { n: 0, net: 0 }; s.n++; s.net += t.net_pnl; byHour.set(h, s); });
+  const hours = [...byHour].sort();
+  const maxAbs = Math.max(...hours.map(([, s]) => Math.abs(s.net)), 1);
+  $("stats").innerHTML = `
+    <div class="stats-top">
+      <div class="kpi"><div class="label">Profit factor</div><div class="value ${pf == null ? "" : pf >= 1 ? "gain" : "loss"}">${pf == null ? "–" : nf(pf)}</div><div class="sub">guadagni ÷ perdite · sopra 1 guadagna</div></div>
+      <div class="kpi"><div class="label">Media per trade</div><div class="value ${cls(exp)}">${signed(exp)}</div><div class="sub">vinto ${signed(wins.length ? gw / wins.length : 0)} · perso ${signed(losses.length ? -gl / losses.length : 0)}</div></div>
+      <div class="kpi"><div class="label">Perdite di fila</div><div class="value">${maxRun}</div><div class="sub">la serie peggiore finora</div></div>
+      <div class="kpi"><div class="label">Vinti</div><div class="value">${nf(100 * wins.length / c.length, 0)}%</div><div class="sub">${wins.length} su ${c.length}</div></div>
+    </div>
+    <div class="stats-cols">
+      <div><h4>Per titolo</h4><div class="table-wrap"><table><thead><tr><th>Titolo</th><th class="r">Trade</th><th class="r">Vinti</th><th class="r">Netto</th></tr></thead><tbody>
+        ${syms.slice(0, 8).map(([s, v]) => `<tr><td class="sym">${esc(s)}</td><td class="r num">${v.n}</td><td class="r num">${nf(100 * v.w / v.n, 0)}%</td><td class="r num ${cls(v.net)}">${signed(v.net)}</td></tr>`).join("")}
+      </tbody></table></div></div>
+      <div><h4>Per ora d'entrata (New York)</h4><div class="hours">
+        ${hours.map(([h, s]) => { const w = 50 * Math.abs(s.net) / maxAbs; return `<div class="hour"><span class="num muted">${h}:00</span>
+          <span class="track"><span class="bar" style="${s.net >= 0 ? "left:50%" : "right:50%"};width:${w}%;background:${s.net >= 0 ? tok("--gain") : tok("--loss")}"></span></span>
+          <span class="num r ${cls(s.net)}" style="text-align:right">${signed(s.net)}</span></div>`; }).join("")}
+      </div></div>
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ controls */
+function saveControl(d, changes, msg) {
+  // preview: changes stay in this page. Live: written to trader/agents/<agent>/control.json in trading-bot.
+  if (PREVIEW) {
+    const parts = Object.entries(changes).map(([k, [a, b]]) => `${k}: ${a} -> ${b}`);
+    if (parts.length) d.events.push({ at: "2026-11-09 " + new Date(now()).toISOString().slice(11, 16), text: "regole cambiate: " + parts.join(", ") });
+    toast(msg + " (anteprima: non arriva al bot)");
+    return Promise.resolve(true);
+  }
+  return Live.writeControl(d).then(() => { toast(msg + ": vale dal prossimo giro del bot"); return true; },
+    (e) => { toast(e.message); Live.refresh(); return false; });
+}
+function renderControls(d) {
+  const r = d.rules, building = d.status === "building";
+  $("controls").innerHTML = `
+    <div class="switch-row">
+      <div><div class="t">Pausa</div><div class="d">${d.paused ? "Non apre nuovi trade. Quelli aperti arrivano a stop, target o fine giornata." : "Il bot apre nuovi trade quando le regole lo permettono."}</div></div>
+      <button class="switch" role="switch" id="pauseSw" aria-checked="${d.paused}" aria-label="Pausa" ${building ? "disabled" : ""}></button>
+    </div>
+    <div id="pauseConfirm" hidden></div>
+    <div class="fields">
+      <div class="field"><label for="f-budget">Budget ($)</label><input id="f-budget" type="number" min="100" step="100" value="${r.budget}"></div>
+      <div class="field"><label for="f-trade">Perdita max a trade ($)</label><input id="f-trade" type="number" min="1" step="5" value="${r.max_loss_per_trade_usd}"></div>
+      <div class="field"><label for="f-day">Perdita max al giorno ($)</label><input id="f-day" type="number" min="1" step="10" value="${r.max_daily_loss_usd}"></div>
+      <div class="field"><label for="f-n">Trade al giorno</label><input id="f-n" type="number" min="0" step="1" value="${r.max_trades_per_day}"></div>
+    </div>
+    <div class="switch-row">
+      <div><div class="t">Short</div><div class="d">Può guadagnare quando il prezzo scende.</div></div>
+      <button class="switch short" role="switch" id="shortSw" aria-checked="${!!r.allow_short}" aria-label="Short"></button>
+    </div>
+    <button class="btn primary" id="saveBtn" disabled>Salva modifiche</button>
+    <div class="note" id="saveNote">Le modifiche valgono dal prossimo giro del bot (entro 5–15 minuti) e restano scritte nel registro.</div>`;
+  const inputs = ["f-budget", "f-trade", "f-day", "f-n"].map($);
+  const dirty = () => ($("saveBtn").disabled = false);
+  inputs.forEach((i) => i.oninput = dirty);
+  $("shortSw").onclick = (e) => { const b = e.currentTarget; b.setAttribute("aria-checked", b.getAttribute("aria-checked") !== "true"); dirty(); };
+  $("pauseSw").onclick = () => {
+    const box = $("pauseConfirm"), next = !d.paused;
+    box.hidden = false;
+    box.innerHTML = `<div class="confirm"><div>${next ? "Mettere in pausa l'agente <b>" + esc(d.name) + "</b>? I trade aperti restano gestiti." : "Riattivare l'agente <b>" + esc(d.name) + "</b>?"}</div>
+      <div class="row"><button class="btn primary" id="pauseYes">${next ? "Metti in pausa" : "Riattiva"}</button><button class="btn" id="pauseNo">Annulla</button></div></div>`;
+    $("pauseNo").onclick = () => (box.hidden = true);
+    $("pauseYes").onclick = () => {
+      setPaused(d, next);
+      saveControl(d, { pausa: [next ? "no" : "si", next ? "si" : "no"] }, next ? "Agente in pausa" : "Agente riattivato");
+      render();
+    };
+  };
+  $("saveBtn").onclick = () => {
+    const v = inputs.map((i) => Number(i.value));
+    if (v.some((x) => !(x >= 0)) || v[0] <= 0) { $("saveNote").textContent = "Controlla i valori: devono essere numeri positivi, e il budget sopra zero."; return; }
+    const short = $("shortSw").getAttribute("aria-checked") === "true";
+    const names = [["budget", "budget"], ["max_loss_per_trade_usd", "perdita max a trade"], ["max_daily_loss_usd", "perdita max al giorno"], ["max_trades_per_day", "trade al giorno"]];
+    const changes = {};
+    names.forEach(([k, label], i) => { if (r[k] !== v[i]) changes[label] = [r[k], v[i]]; });
+    if (!!r.allow_short !== short) changes.short = [r.allow_short ? "si" : "no", short ? "si" : "no"];
+    Object.assign(r, { budget: v[0], max_loss_per_trade_usd: v[1], max_daily_loss_usd: v[2], max_trades_per_day: v[3], allow_short: short });
+    Object.assign(d.risk, { max_loss_per_trade: v[1], max_daily_loss: v[2], max_trades_per_day: v[3] });
+    saveControl(d, changes, Object.keys(changes).length ? "Salvato" : "Nessuna modifica");
+    render();
+  };
+}
+function setPaused(d, on) {
+  if (d.status === "building") return;
+  d.paused = on; d.status = on ? "paused" : "running";
+  d.status_label = on ? "In pausa: gestisce i trade aperti, non ne apre di nuovi" : "Attivo";
+}
+
+/* emergency stop: pause every agent at once */
+$("stopAll").onclick = () => {
+  const sh = $("sheet");
+  const running = REAL.filter((k) => !state.data[k].paused && state.data[k].status !== "building");
+  sh.hidden = false;
+  sh.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <h3 id="sheetTitle">Stop di emergenza</h3>
+    <div>${running.length ? "Mette in pausa <b>tutti gli agenti</b> (" + running.map((k) => state.data[k].name).join(", ") + "). Nessuno apre nuovi trade; quelli aperti arrivano comunque a stop, target o fine giornata." : "Tutti gli agenti sono già in pausa."}</div>
+    <div class="row">${running.length ? '<button class="btn danger" id="stopYes">Metti tutto in pausa</button>' : ""}<button class="btn" id="stopNo">${running.length ? "Annulla" : "Chiudi"}</button></div>
+    <div class="note">Per ripartire usa Start generale, oppure l'interruttore Pausa di ogni agente.</div></div>`;
+  $("stopNo").onclick = () => (sh.hidden = true);
+  if ($("stopYes")) $("stopYes").onclick = async () => {
+    $("stopYes").disabled = true;
+    for (const k of running) { setPaused(state.data[k], true); await saveControl(state.data[k], { pausa: ["no", "si"] }, "Tutti gli agenti in pausa"); }
+    sh.hidden = true; render();
+  };
+};
+/* general start: every agent leaves pause at the same moment */
+$("startAll").onclick = () => {
+  const sh = $("sheet");
+  const paused = REAL.filter((k) => state.data[k].paused && state.data[k].status !== "building");
+  const building = REAL.filter((k) => state.data[k].status === "building").map((k) => state.data[k].name);
+  sh.hidden = false;
+  sh.innerHTML = `<div class="card go" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <h3 id="sheetTitle">Start generale</h3>
+    <div>${paused.length ? "Fa partire insieme <b>" + paused.map((k) => state.data[k].name).join(", ") + "</b> con le regole che vedi nei loro Comandi. Dal prossimo giro (entro 5–15 minuti) cercano segnali e aprono trade, sempre con soldi finti." : "Tutti gli agenti sono già attivi."}</div>
+    ${building.length ? `<div class="note">${building.join(", ")}: in costruzione, partirà quando sarà pronto.</div>` : ""}
+    <div class="row">${paused.length ? '<button class="btn go" id="startYes">Fai partire tutto</button>' : ""}<button class="btn" id="startNo">${paused.length ? "Annulla" : "Chiudi"}</button></div></div>`;
+  $("startNo").onclick = () => (sh.hidden = true);
+  if ($("startYes")) $("startYes").onclick = async () => {
+    $("startYes").disabled = true;
+    for (const k of paused) { setPaused(state.data[k], false); await saveControl(state.data[k], { pausa: ["si", "no"] }, "Tutti gli agenti partiti"); }
+    sh.hidden = true; render();
+  };
+};
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("sheet").hidden = true; });
+
+/* ------------------------------------------------------------------ signals, news */
+function renderSignals(d) {
+  $("sigHint").textContent = d.strategy.setup;
+  if (!d.signals.length) { $("signals").innerHTML = '<div class="empty">Il bot non ha ancora guardato nessun titolo oggi.</div>'; return; }
+  $("signals").innerHTML = d.signals.map((x) => `
+    <div class="row-item">
+      <div class="row-head"><span class="sym">${esc(x.symbol)}</span><span class="tag ${x.status}">${SIG[x.status] || x.status}</span>${x.side === "sell" ? '<span class="tag short">short</span>' : ""}
+        <span class="right ${x.distance_pct == null ? "" : x.distance_pct >= 0 ? "gain" : "muted"}">${x.distance_pct == null ? "" : pct(x.distance_pct)}</span></div>
+      <div class="txt">${esc(x.text)}</div>
+    </div>`).join("");
+}
+function renderNews(d) {
+  if (!d.news.length) { $("news").innerHTML = '<div class="empty">Nessuna notizia per ora.</div>'; return; }
+  $("news").innerHTML = d.news.map((n) => `
+    <div class="row-item news-item">
+      <div class="row-head"><span class="sym">${esc(n.symbol)}</span><span class="muted" style="font-size:12px">${esc(n.source)}${n.time ? " · " + new Date(n.time * 1000).toLocaleString("it-IT", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" }) : ""}</span></div>
+      <div>${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.headline)}</a>` : esc(n.headline)}</div>
+    </div>`).join("");
+}
+
+/* ------------------------------------------------------------------ diary (with filters), log, rules */
+function weekStartOf(date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return d.toISOString().slice(0, 10); }
+function renderBottom(d) {
+  document.querySelectorAll("#bottomTabs .tab").forEach((b) => {
+    b.setAttribute("aria-selected", b.dataset.tab === state.tab);
+    b.onclick = () => { state.tab = b.dataset.tab; renderBottom(d); };
+  });
+  ["diary", "log", "rules"].forEach((k) => ($("tab-" + k).hidden = k !== state.tab));
+  renderDiary(d);
+  $("tab-log").innerHTML = d.events.length ? `<div class="log">${d.events.slice().reverse().map((e) => `<div class="${e.text.startsWith("regole cambiate") ? "rule-change" : ""}"><time>${esc(e.at.slice(5))}</time><span>${esc(e.text.replace(/ -> /g, " → "))}</span></div>`).join("")}</div>`
+    : '<div class="empty">Il registro è vuoto.</div>';
+  const r = d.rules, s = d.strategy;
+  const kv = (k, v) => `<div class="kv"><dt>${k}</dt><dd>${v}</dd></div>`;
+  $("tab-rules").innerHTML = `<div class="rules">
+    <dl><h4>Soldi e rischio</h4>${kv("Budget", usd(r.budget))}${kv("Perdita max a trade", usd(r.max_loss_per_trade_usd))}${kv("Perdita max al giorno", usd(r.max_daily_loss_usd))}
+      ${kv("Trade al giorno", r.max_trades_per_day)}${kv("Rendimento/rischio minimo", nf(r.min_reward_risk, 1))}${kv("Riserva di cassa", r.cash_buffer_pct + "%")}${kv("Posizione max", r.max_position_pct + "% del conto")}${kv("Short", r.allow_short ? "attivo" : "spento")}</dl>
+    <dl><h4>Orari (New York)</h4>${kv("Nessuna entrata prima delle", r.no_entries_before)}${kv("Nessuna entrata dopo le", r.no_entries_after)}${kv("Tutto chiuso entro le", r.flat_by)}
+      <h4>Costi simulati</h4>${kv("Slippage", "$" + nf(s.slippage_per_share) + " per azione")}${kv("Commissione", "$" + nf(s.commission_per_share, 3) + " per azione, min $" + nf(s.commission_min))}${kv("Segnale troppo vecchio dopo", s.max_entry_age_minutes + " minuti")}</dl>
+    <dl><h4>Strategia</h4>${kv("Setup", esc(s.setup))}${kv("Stop", s.stop === "or-mid" ? "metà del range d'apertura" : esc(s.stop))}${kv("Target", esc(s.target) + " (volte il rischio)")}
+      ${kv("Titoli seguiti", s.watchlist.length)}<div class="note" style="padding-top:8px">${s.watchlist.map(esc).join(" · ")}</div></dl>
+  </div>`;
+}
+function renderDiary(d) {
+  const f = state.filter, today = d.date, wk = weekStartOf(today);
+  const syms = [...new Set(d.trades.map((t) => t.symbol))].sort();
+  if (f.sym !== "all" && !syms.includes(f.sym)) f.sym = "all";
+  const rows = d.trades.filter((t) =>
+    (f.res === "all" || (f.res === "win" && t.status === "closed" && t.net_pnl > 0) || (f.res === "loss" && t.status === "closed" && t.net_pnl <= 0) || (f.res === "open" && t.status === "open")) &&
+    (f.sym === "all" || t.symbol === f.sym) &&
+    (f.period === "all" || (f.period === "today" && t.date === today) || (f.period === "week" && t.date >= wk)));
+  const net = rows.filter((t) => t.status === "closed").reduce((a, t) => a + t.net_pnl, 0);
+  const opt = (v, cur, label) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(label)}</option>`;
+  $("tab-diary").innerHTML = !d.trades.length ? '<div class="empty">Il diario è vuoto: qui compare ogni trade, con entrata, uscita e risultato.</div>' : `
+    <div class="filters">
+      <div class="field"><label for="flt-res">Esito</label><select id="flt-res">${opt("all", f.res, "Tutti")}${opt("win", f.res, "Vinti")}${opt("loss", f.res, "Persi")}${opt("open", f.res, "Aperti")}</select></div>
+      <div class="field"><label for="flt-sym">Titolo</label><select id="flt-sym">${opt("all", f.sym, "Tutti")}${syms.map((s) => opt(s, f.sym, s)).join("")}</select></div>
+      <div class="field"><label for="flt-period">Periodo</label><select id="flt-period">${opt("all", f.period, "Sempre")}${opt("week", f.period, "Questa settimana")}${opt("today", f.period, "Oggi")}</select></div>
+      <span class="count">${rows.length} trade · netto <b class="${cls(net)}">${signed(net)}</b></span>
+    </div>
+    ${rows.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Titolo</th><th>Lato</th><th class="r">Qtà</th><th>Entrata</th><th class="r">Stop</th><th class="r">Target</th><th>Uscita</th><th>Motivo</th><th class="r">R</th><th class="r">Netto</th></tr></thead>
+    <tbody>${rows.map((t) => `<tr>
+      <td class="num">${t.date.slice(8, 10)}/${t.date.slice(5, 7)}</td><td class="sym">${esc(t.symbol)}</td><td>${t.side === "buy" ? "long" : '<span class="tag short">short</span>'}</td>
+      <td class="r num">${t.qty}</td><td class="num">${t.entry_time} · ${nf(t.entry_fill)}</td><td class="r num">${nf(t.stop)}</td><td class="r num">${nf(t.target)}</td>
+      <td class="num">${t.status === "closed" ? t.exit_time + " · " + nf(t.exit_fill) : '<span class="muted">aperto · ' + nf(t.last_price) + "</span>"}</td>
+      <td>${t.status === "closed" ? (REASON[t.exit_reason] || t.exit_reason) : "–"}</td>
+      <td class="r num ${cls(t.r_multiple)}">${t.r_multiple == null ? "–" : (t.r_multiple >= 0 ? "+" : "−") + nf(Math.abs(t.r_multiple))}</td>
+      <td class="r num ${cls(t.net_pnl)}">${t.status === "closed" ? signed(t.net_pnl) : "–"}</td></tr>`).join("")}</tbody></table></div>`
+    : '<div class="empty">Nessun trade con questi filtri.</div>'}`;
+  ["res", "sym", "period"].forEach((k) => { const el = $("flt-" + k); if (el) el.onchange = () => { f[k] = el.value; renderDiary(d); }; });
+}
+
+/* ------------------------------------------------------------------ all agents */
+function renderAll() {
+  const ds = REAL.map((k) => state.data[k]);
+  const sum = (f) => ds.reduce((a, d) => a + f(d), 0);
+  const start = sum((d) => d.account.start), eq = sum((d) => d.account.equity), today = sum((d) => d.account.pnl_today), week = sum((d) => d.account.pnl_week);
+  const closed = sum((d) => d.stats.all.closed), wins = sum((d) => d.stats.all.wins), open = sum((d) => d.open.length);
+  const latest = Math.max(...ds.map((d) => Date.parse(d.updated_at)));
+  $("allUpdated").textContent = "Ultimo aggiornamento " + new Date(latest).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  $("allStrip").innerHTML = `
+    <div class="kpi"><div class="label">Capitale totale</div><div class="value">${usd(eq)}</div><div class="sub">partito da ${usd(start)}</div></div>
+    <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(today)}">${signed(today)}</div><div class="sub">${open} trade aperti</div></div>
+    <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(week)}">${signed(week)}</div><div class="sub">tre agenti insieme</div></div>
+    <div class="kpi"><div class="label">Totale</div><div class="value ${cls(eq - start)}">${signed(eq - start)}</div><div class="sub">${pct(100 * (eq / start - 1))}</div></div>
+    <div class="kpi"><div class="label">Trade chiusi</div><div class="value">${closed}</div><div class="sub">${closed ? nf(100 * wins / closed, 0) + "% vinti" : "–"}</div></div>
+    <div class="kpi"><div class="label">Agenti attivi</div><div class="value">${ds.filter((d) => d.status === "running").length} / 3</div><div class="sub">${ds.filter((d) => d.paused).length} in pausa · ${ds.filter(isStale).length} fermi</div></div>`;
+  $("ovCards").innerHTML = ds.map((d) => {
+    const botPct = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0;
+    return `<button class="panel ov-card" data-agent="${d.agent}">
+      <div class="top-row"><span class="dot ${dotOf(d)}"></span><h3>${esc(d.name)}</h3><span class="pill ${d.status}" style="margin-left:auto">${STATUS[d.status]}</span></div>
+      <div class="big">${usd(d.account.equity)}</div>
+      ${isStale(d) ? `<div class="loss" style="font-size:12px">⚠ non aggiorna da ${minutesOld(d)} minuti</div>` : ""}
+      <div class="facts">
+        <div><small>Oggi</small><b class="${cls(d.account.pnl_today)}">${signed(d.account.pnl_today)}</b></div>
+        <div><small>Totale</small><b class="${cls(d.account.pnl_total)}">${pct(botPct)}</b></div>
+        <div><small>Vinti</small><b>${d.stats.all.win_rate == null ? "–" : nf(d.stats.all.win_rate, 0) + "%"}</b></div>
+        <div><small>vs ${d.benchmark ? esc(d.benchmark.symbol) : "mercato"}</small><b class="${d.benchmark ? cls(botPct - d.benchmark.pct) : ""}">${d.benchmark ? pct(botPct - d.benchmark.pct) : "–"}</b></div>
+      </div></button>`;
+  }).join("");
+  $("ovCards").querySelectorAll("button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
+  const el = $("allChart"); el.innerHTML = "";
+  const colors = { stocks: tok("--accent"), etf: tok("--info"), crypto: tok("--bench") };
+  const withCurve = ds.filter((d) => (d.equity_curve || []).length > 1);
+  if (withCurve.length) {
+    const ch = baseChart(el, { timeScale: { borderColor: tok("--line"), timeVisible: false }, handleScroll: false, handleScale: false });
+    withCurve.forEach((d) => ch.addLineSeries({ color: colors[d.agent], lineWidth: 2, priceLineVisible: false }).setData(d.equity_curve.map((p) => ({ time: p.date, value: p.equity }))));
+    ch.timeScale().fitContent();
+  } else el.innerHTML = '<div class="empty">Le curve compaiono dopo i primi giorni di trading.</div>';
+  $("allLegend").innerHTML = ds.map((d) => `<span><i style="background:${colors[d.agent]}"></i>${esc(d.name)}${(d.equity_curve || []).length > 1 ? "" : " (ancora nessun dato)"}</span>`).join("");
+  $("allTable").innerHTML = `<table><thead><tr><th>Agente</th><th>Stato</th><th class="r">Capitale</th><th class="r">Oggi</th><th class="r">Settimana</th><th class="r">Totale</th><th class="r">Trade</th><th class="r">Vinti</th><th class="r">Calo max</th><th class="r">vs mercato</th></tr></thead><tbody>
+    ${ds.map((d) => { const bp = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0; return `<tr class="click" data-agent="${d.agent}">
+      <td><b>${esc(d.name)}</b></td><td><span class="pill ${d.status}">${STATUS[d.status]}</span></td><td class="r num">${usd(d.account.equity)}</td>
+      <td class="r num ${cls(d.account.pnl_today)}">${signed(d.account.pnl_today)}</td><td class="r num ${cls(d.account.pnl_week)}">${signed(d.account.pnl_week)}</td>
+      <td class="r num ${cls(d.account.pnl_total)}">${signed(d.account.pnl_total)}</td><td class="r num">${d.stats.all.closed}</td>
+      <td class="r num">${d.stats.all.win_rate == null ? "–" : nf(d.stats.all.win_rate, 0) + "%"}</td>
+      <td class="r num ${d.drawdown && d.drawdown.abs < 0 ? "loss" : ""}">${d.drawdown && d.drawdown.abs < 0 ? pct(d.drawdown.pct) : "–"}</td>
+      <td class="r num ${d.benchmark ? cls(bp - d.benchmark.pct) : ""}">${d.benchmark ? pct(bp - d.benchmark.pct) : "–"}</td></tr>`; }).join("")}
+    </tbody></table>`;
+  $("allTable").querySelectorAll("tr.click").forEach((tr) => tr.onclick = () => selectAgent(tr.dataset.agent, true));
+}
+
+/* ------------------------------------------------------------------ preview: the open trades' price moves */
+function previewTick() {
+  if (state.agent === "all") return;
+  const d = state.data[state.agent];
+  const open = d.open.find((t) => t.symbol === state.sym);
+  if (!open || !liveSeries || liveSeries.sym !== open.symbol) return;
+  const before = open.last_price;
+  const next = Math.round(before * (1 + (Math.random() - .5) * .0016) * 100) / 100;
+  if (next === before) return;
+  open.last_price = next;
+  const bars = d.bars[open.symbol], last = bars[bars.length - 1];
+  last[4] = next; last[2] = Math.max(last[2], next); last[3] = Math.min(last[3], next);
+  liveSeries.s.update({ time: last[0] + liveSeries.shift, open: last[1], high: last[2], low: last[3], close: last[4] });
+  const diff = (open.side === "buy" ? 1 : -1) * (next - before) * open.qty;
+  d.account.equity = Math.round((d.account.equity + diff) * 100) / 100;
+  d.account.pnl_total = Math.round((d.account.pnl_total + diff) * 100) / 100;
+  const dir = next > before ? "flash-up" : "flash-down";
+  renderLegend(d, dir);
+  const k = $("kEquity"); if (k) { k.textContent = usd(d.account.equity); k.classList.remove("flash-up", "flash-down"); void k.offsetWidth; k.classList.add(dir); }
+}
+
+/* ------------------------------------------------------------------ live: GitHub as the data source */
+const Live = (() => {
+  const REPO = "Pafferitos/trading-bot", KEY = "cdr_token", API = "https://api.github.com/repos/" + REPO;
+  const POLL_MS = 60000;
+  const pending = {};                  // agent -> {doc, at}: a command sent, waiting for the bot's next run
+  let token = null, timer = null;
+  const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+               set: (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+               del: (k) => { try { localStorage.removeItem(k); } catch (e) { /* nothing stored */ } } };
+  const b64 = { dec: (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), (c) => c.charCodeAt(0))),
+                enc: (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))) };
+  async function gh(path, opts = {}) {
+    let r;
+    try {
+      r = await fetch(API + path, Object.assign({}, opts, { cache: "no-store", headers: Object.assign({
+        Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, opts.headers || {}) }));
+    } catch (e) { throw new Error("GitHub non risponde: controlla la connessione"); }
+    if (r.status === 401) throw Object.assign(new Error("Token non valido o scaduto: scollega e inseriscine uno nuovo"), { status: 401 });
+    if (r.status === 403) throw Object.assign(new Error("Il token non ha il permesso: serve Contents in lettura e scrittura su trading-bot"), { status: 403 });
+    if (r.status === 404) throw Object.assign(new Error("File non trovato: " + path), { status: 404 });
+    if (!r.ok) throw Object.assign(new Error("GitHub ha risposto " + r.status), { status: r.status });
+    return r.json();
+  }
+  async function readJson(path) {
+    const f = await gh("/contents/" + path + "?ref=main");
+    return { doc: JSON.parse(b64.dec(f.content)), sha: f.sha };
+  }
+  function overlay(key, d) {
+    // until the bot has run with a command, show what was asked, marked as waiting
+    const p = pending[key];
+    if (!p) return d;
+    if (Date.parse(d.updated_at) > p.at) { delete pending[key]; return d; }
+    d.paused = p.doc.paused;
+    if (d.status !== "building") d.status = p.doc.paused ? "paused" : "running";
+    d.status_label = "Comando inviato: vale dal prossimo giro del bot";
+    Object.assign(d.rules, { budget: p.doc.budget, max_loss_per_trade_usd: p.doc.max_loss_per_trade_usd, max_daily_loss_usd: p.doc.max_daily_loss_usd,
+                             max_trades_per_day: p.doc.max_trades_per_day, allow_short: p.doc.allow_short });
+    return d;
+  }
+  async function loadAll() {
+    const out = {};
+    await Promise.all(REAL.map(async (k) => {
+      try { out[k] = (await readJson("trader/agents/" + k + "/dashboard.json")).doc; }
+      catch (e) { if (e.status === 401 || e.status === 403) throw e; out[k] = null; }
+    }));
+    REAL.forEach((k) => {
+      let d = out[k];
+      if (!d) d = emptyAgent(k);
+      if (k === "crypto") { d.status = "building"; d.status_label = "In costruzione: motore 24/7 in arrivo"; }
+      d.days = d.days || []; d.signals = d.signals || []; d.news = d.news || []; d.events = d.events || []; d.bars = d.bars || {};
+      out[k] = overlay(k, d);
+    });
+    return out;
+  }
+  function emptyAgent(k) {
+    const name = { stocks: "Azioni", etf: "ETF", crypto: "Crypto" }[k];
+    return { agent: k, name, status: "closed", status_label: "Ancora nessun dato dal bot", paused: true, updated_at: new Date(0).toISOString(), date: "",
+      account: { start: 0, equity: 0, cash: 0, pnl_total: 0, pnl_today: 0, pnl_week: 0 },
+      stats: { today: { closed: 0, wins: 0, losses: 0, win_rate: null }, week: { closed: 0, wins: 0, losses: 0, win_rate: null }, all: { closed: 0, wins: 0, losses: 0, win_rate: null } },
+      risk: { max_loss_per_trade: 0, max_daily_loss: 0, used_today: 0, open_risk: 0, trades_today: 0, max_trades_per_day: 0 },
+      days: [], equity_curve: [], drawdown: null, benchmark: null, open: [], trades: [], signals: [], bars: {}, news: [], events: [],
+      rules: { budget: 0, max_loss_per_trade_usd: 0, max_daily_loss_usd: 0, max_trades_per_day: 0, min_reward_risk: 0, allow_short: false,
+               no_entries_before: "-", no_entries_after: "-", flat_by: "-", cash_buffer_pct: 0, max_position_pct: 0 },
+      strategy: { setup: "-", stop: "-", target: "-", watchlist: [], slippage_per_share: 0, commission_per_share: 0, commission_min: 0, max_entry_age_minutes: 0 } };
+  }
+  async function refresh() {
+    try {
+      const prev = state.data;
+      state.data = await loadAll();
+      flashMoves(prev, state.data);
+      state.ready = true;
+      setBanner();
+      render();
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) { disconnect(e.message); return; }
+      toast(e.message);
+    }
+  }
+  function flashMoves(prev, next) {
+    if (!prev || prev === SAMPLE) return;
+    REAL.forEach((k) => (next[k].open || []).forEach((t) => {
+      const was = ((prev[k] || {}).open || []).find((x) => x.symbol === t.symbol);
+      if (was && was.last_price !== t.last_price) t._flash = t.last_price > was.last_price ? "flash-up" : "flash-down";
+    }));
+  }
+  async function writeControl(d) {
+    const path = "trader/agents/" + d.agent + "/control.json";
+    const doc = { paused: !!d.paused, budget: Number(d.rules.budget), max_loss_per_trade_usd: Number(d.rules.max_loss_per_trade_usd),
+                  max_daily_loss_usd: Number(d.rules.max_daily_loss_usd), max_trades_per_day: Number(d.rules.max_trades_per_day),
+                  allow_short: !!d.rules.allow_short, changed_at: new Date().toISOString(), changed_from: "cabina-di-regia" };
+    const body = (sha) => JSON.stringify({ message: "Cabina di Regia: comandi " + d.name + (doc.paused ? " (pausa)" : " (attivo)"),
+                                           content: b64.enc(JSON.stringify(doc, null, 2) + "\n"), sha, branch: "main" });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let sha;
+      try { sha = (await gh("/contents/" + path + "?ref=main")).sha; } catch (e) { if (e.status !== 404) throw e; }
+      try { await gh("/contents/" + path, { method: "PUT", body: body(sha) }); pending[d.agent] = { doc, at: Date.now() }; return; }
+      catch (e) { if (!(e.status === 409 || e.status === 422) || attempt) throw e; }
+    }
+  }
+  function start(t) {
+    token = t; PREVIEW = false;
+    $("setup").hidden = true;
+    setBanner(true);
+    refresh();
+    clearInterval(timer); timer = setInterval(() => { if (!document.hidden) refresh(); }, POLL_MS);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && !PREVIEW) refresh(); });
+  }
+  async function connect(t) {
+    token = t;
+    await gh("/contents/trader/agents/stocks/dashboard.json?ref=main");      // proves read access
+    if (!ls.set(KEY, t)) toast("Questo browser non salva dati: il token vale solo finché la pagina resta aperta");
+    start(t);
+  }
+  function disconnect(why) {
+    ls.del(KEY); token = null; clearInterval(timer);
+    showSetup(why || "Scollegato: il token è stato cancellato da questo dispositivo.");
+  }
+  return { saved: () => ls.get(KEY), connect, start, disconnect, refresh, writeControl };
+})();
+
+function setBanner(loading) {
+  const b = $("banner");
+  if (PREVIEW) {
+    b.className = "banner";
+    b.innerHTML = `<div class="wrap"><b>Anteprima</b><span>Tutti i numeri, i trade e le notizie qui sotto sono esempi inventati per mostrare la pagina. Nessun dato reale.</span>${Live.saved() ? "" : '<button class="link" id="goSetup">Collega il bot</button>'}</div>`;
+    const g = $("goSetup"); if (g) g.onclick = () => showSetup();
+    return;
+  }
+  b.className = "banner live";
+  b.innerHTML = `<div class="wrap"><b>Collegato</b><span>${loading ? "Carico i dati del bot…" : "Dati veri dal bot, aggiornati ogni minuto. Soldi finti (fase 1)."}</span><button class="link" id="logout">Scollega</button></div>`;
+  $("logout").onclick = () => Live.disconnect();
+}
+function showSetup(msg) {
+  PREVIEW = true; state.data = SAMPLE;
+  $("setup").hidden = false; $("agentView").hidden = true; $("allView").hidden = true;
+  $("agentView").style.display = "none"; $("allView").style.display = "none";
+  $("tok").value = "";
+  const err = $("tokErr"); err.hidden = !msg; err.textContent = msg || "";
+  setBanner();
+  $("banner").hidden = true;
+  $("agentTabs").innerHTML = ""; $("bottomBar").innerHTML = "";
+}
+$("tokGo").onclick = async () => {
+  const t = $("tok").value.trim(), err = $("tokErr");
+  err.hidden = true;
+  if (!/^(github_pat_|ghp_)/.test(t)) { err.hidden = false; err.textContent = "Il token inizia con github_pat_: incollalo intero."; return; }
+  $("tokGo").disabled = true; $("tokGo").textContent = "Collego…";
+  try { await Live.connect(t); $("banner").hidden = false; }
+  catch (e) { err.hidden = false; err.textContent = e.message; }
+  finally { $("tokGo").disabled = false; $("tokGo").textContent = "Collega"; }
+};
+$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") $("tokGo").click(); });
+$("tokPreview").onclick = () => { $("setup").hidden = true; $("banner").hidden = false; PREVIEW = true; state.data = SAMPLE; setBanner(); render(); };
+
+/* ------------------------------------------------------------------ start */
+function fromHash() {
+  const h = location.hash.replace("#", ""); const a = AGENTS.find((x) => x[2] === h);
+  if (a) state.agent = a[0];
+}
+window.addEventListener("hashchange", () => { fromHash(); state.sym = null; render(); });
+fromHash();
+if (window.LightweightCharts) {
+  const saved = Live.saved();
+  if (saved) Live.start(saved);
+  else showSetup();
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) setInterval(() => { if (PREVIEW && !$("agentView").hidden) previewTick(); }, 2500);
+} else {
+  document.getElementById("chart").innerHTML = '<div class="empty">La libreria dei grafici non si è caricata: ricarica la pagina.</div>';
+}
+</script>
+
+</body>
+</html>
