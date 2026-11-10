@@ -256,6 +256,29 @@ tr.click:hover td { background: var(--panel-2); }
 .ov-card .facts { padding: 0; border: 0; }
 
 .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+/* chat with Claude */
+.chat-btn { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 25;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 11px 18px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+.chat { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100%); z-index: 35; background: var(--panel-2); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: -12px 0 40px rgba(0,0,0,.5); }
+.chat header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.chat header h3 { font: 700 16px var(--f-display); margin: 0; margin-right: auto; }
+.chat .x { border: 0; background: transparent; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+.chat .body { flex: 1; overflow-y: auto; padding: 12px 16px; display: grid; gap: 10px; align-content: start; }
+.chat .thread-item { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.chat .thread-item small { color: var(--muted); }
+.bubble { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.bubble.me { justify-self: end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.bubble.ai { justify-self: start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.ai code { font-family: var(--f-mono); font-size: 12.5px; background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
+.bubble.ai a { color: var(--info); }
+.bubble .who { display: block; font-size: 11px; opacity: .7; margin-bottom: 2px; }
+.chat .compose { display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.chat textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font: inherit; color: var(--fg); }
+.chat textarea:focus { border-color: var(--accent); outline: none; }
+.chat .row { display: flex; gap: 8px; align-items: center; }
+.chat .wait { color: var(--muted); font-size: 12.5px; }
+@media (max-width: 640px) { .chat-btn { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } }
 .setup { max-width: 560px; margin: 24px auto; padding: 22px; display: grid; gap: 14px; }
 .setup h2 { font: 700 24px/1.15 var(--f-display); margin: 0; }
 .setup p { margin: 0; color: var(--muted); }
@@ -427,6 +450,16 @@ tr.click:hover td { background: var(--panel-2); }
 
 <nav class="bottombar" role="tablist" aria-label="Agente" id="bottomBar"></nav>
 <div class="sheet" id="sheet" hidden></div>
+<button class="chat-btn" id="chatBtn" aria-haspopup="dialog">Chiedi a Claude</button>
+<aside class="chat" id="chat" hidden aria-label="Chat con Claude">
+  <header><button class="x" id="chatBack" hidden aria-label="Indietro">‹</button><h3 id="chatTitle">Chiedi a Claude</h3><button class="x" id="chatClose" aria-label="Chiudi">×</button></header>
+  <div class="body" id="chatBody"></div>
+  <div class="compose" id="chatCompose">
+    <label for="chatText" class="note" id="chatHint">Fai una domanda o chiedi una modifica. Claude legge tutto il progetto e risponde qui in 1–3 minuti.</label>
+    <textarea id="chatText" placeholder="Es. perché ha aperto DOGE short? Com'è andata oggi?"></textarea>
+    <div class="row"><button class="btn primary" id="chatSend">Invia</button><span class="wait" id="chatWait"></span></div>
+  </div>
+</aside>
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -1297,7 +1330,7 @@ const Live = (() => {
     ls.del(KEY); token = null; clearInterval(timer);
     showSetup(why || "Scollegato: il token è stato cancellato da questo dispositivo.");
   }
-  return { saved: () => ls.get(KEY), connect, start, disconnect, refresh, writeControl };
+  return { saved: () => ls.get(KEY), connect, start, disconnect, refresh, writeControl, api: gh };
 })();
 
 function setBanner(loading) {
@@ -1333,6 +1366,82 @@ $("tokGo").onclick = async () => {
 };
 $("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") $("tokGo").click(); });
 $("tokPreview").onclick = () => { $("setup").hidden = true; $("banner").hidden = false; PREVIEW = true; state.data = SAMPLE; setBanner(); render(); };
+
+/* ------------------------------------------------------------------ chat with Claude
+   A conversation is a GitHub issue in trading-bot labelled cabina-chat; each message starts with
+   @claude, which starts the Claude workflow; Claude answers with a comment in the same issue. */
+const Chat = (() => {
+  const LABEL = "cabina-chat";
+  let thread = null, timer = null;
+  const el = (id) => document.getElementById(id);
+  function md(t) {
+    // a small, safe subset of markdown for Claude's answers
+    let h = esc(t || "");
+    h = h.replace(/```[\s\S]*?```/g, (m) => "<code>" + m.slice(3, -3).replace(/^\w*\n/, "") + "</code>");
+    h = h.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    h = h.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return h.replace(/\n/g, "<br>");
+  }
+  const clean = (b) => String(b || "").replace(/^\s*@claude\s*/i, "");
+  const isClaude = (u) => /claude/i.test((u && u.login) || "");
+  function open() { el("chat").hidden = false; thread ? openThread(thread) : list(); }
+  function close() { el("chat").hidden = true; clearInterval(timer); }
+  function setWait(t) { el("chatWait").textContent = t || ""; }
+  async function list() {
+    thread = null; clearInterval(timer);
+    el("chatBack").hidden = true; el("chatTitle").textContent = "Chiedi a Claude";
+    el("chatHint").textContent = "Nuova domanda: Claude legge tutto il progetto e risponde qui in 1–3 minuti.";
+    if (PREVIEW) { el("chatBody").innerHTML = '<div class="empty">La chat funziona con la pagina collegata al bot (Collega il bot).</div>'; return; }
+    el("chatBody").innerHTML = '<div class="empty">Carico le conversazioni…</div>';
+    try {
+      const items = await Live.api("/issues?labels=" + LABEL + "&state=all&per_page=30&sort=updated");
+      el("chatBody").innerHTML = items.length ? items.map((i) => `<button class="thread-item" data-n="${i.number}"><b>${esc(i.title)}</b>
+        <small>${new Date(i.updated_at).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${i.comments} messaggi</small></button>`).join("")
+        : '<div class="empty">Ancora nessuna conversazione. Scrivi qui sotto la prima domanda.</div>';
+      el("chatBody").querySelectorAll(".thread-item").forEach((b) => b.onclick = () => openThread(+b.dataset.n));
+    } catch (e) { el("chatBody").innerHTML = `<div class="empty">${esc(permMsg(e))}</div>`; }
+  }
+  function permMsg(e) {
+    return e.status === 403 ? "Il token della pagina non ha il permesso Issues: aggiungi \"Issues: Read and write\" al token su GitHub." : e.message;
+  }
+  async function openThread(n) {
+    thread = n;
+    el("chatBack").hidden = false; el("chatTitle").textContent = "Conversazione #" + n;
+    el("chatHint").textContent = "Rispondi o chiedi altro su questo argomento.";
+    await load();
+    clearInterval(timer); timer = setInterval(() => { if (!el("chat").hidden) load(); }, 10000);
+  }
+  async function load() {
+    try {
+      const [issue, comments] = await Promise.all([Live.api("/issues/" + thread), Live.api("/issues/" + thread + "/comments?per_page=100")]);
+      const msgs = [{ me: true, body: clean(issue.body), at: issue.created_at }].concat(comments.map((c) => ({ me: !isClaude(c.user), body: isClaude(c.user) ? c.body : clean(c.body), at: c.created_at })));
+      const box = el("chatBody"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+      box.innerHTML = msgs.map((m) => `<div class="bubble ${m.me ? "me" : "ai"}"><span class="who">${m.me ? "Tu" : "Claude"} · ${new Date(m.at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>${m.me ? esc(m.body).replace(/\n/g, "<br>") : md(m.body)}</div>`).join("");
+      const last = msgs[msgs.length - 1];
+      setWait(last.me ? "Claude sta leggendo il progetto… (di solito 1–3 minuti)" : "");
+      if (atEnd) box.scrollTop = box.scrollHeight;
+    } catch (e) { setWait(permMsg(e)); }
+  }
+  async function send() {
+    const t = el("chatText").value.trim();
+    if (!t) return;
+    if (PREVIEW) { setWait("Collega il bot per usare la chat."); return; }
+    el("chatSend").disabled = true; setWait("Invio…");
+    try {
+      if (thread) await Live.api("/issues/" + thread + "/comments", { method: "POST", body: JSON.stringify({ body: "@claude " + t }) });
+      else {
+        const i = await Live.api("/issues", { method: "POST", body: JSON.stringify({ title: t.slice(0, 70) + (t.length > 70 ? "…" : ""), body: "@claude " + t, labels: [LABEL] }) });
+        thread = i.number;
+      }
+      el("chatText").value = "";
+      await openThread(thread);
+    } catch (e) { setWait(permMsg(e)); }
+    finally { el("chatSend").disabled = false; }
+  }
+  el("chatBtn").onclick = open; el("chatClose").onclick = close; el("chatBack").onclick = list; el("chatSend").onclick = send;
+  el("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); });
+  return { open, close };
+})();
 
 /* ------------------------------------------------------------------ start */
 function fromHash() {
