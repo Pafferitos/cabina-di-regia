@@ -109,7 +109,12 @@ main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
 .alert.macro { background: var(--warn-bg); border-color: var(--warn); }
 .alert.macro b { color: var(--warn); }
 
-.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.strip .kpi { background: var(--panel); border: 0; }
+.kpi.glow-up { background: linear-gradient(var(--gain-bg), var(--gain-bg)), var(--panel); box-shadow: inset 0 0 0 1px var(--gain); }
+.kpi.glow-down { background: linear-gradient(var(--loss-bg), var(--loss-bg)), var(--panel); box-shadow: inset 0 0 0 1px var(--loss); }
+.row-item.glow-up { background: var(--gain-bg); box-shadow: inset 3px 0 0 var(--gain); }
+.row-item.glow-down { background: var(--loss-bg); box-shadow: inset 3px 0 0 var(--loss); }
 .kpi { padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
 .kpi:last-child { border-right: 0; }
 .kpi .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
@@ -260,10 +265,11 @@ tr.click:hover td { background: var(--panel-2); }
 
 /* phone: agent switcher moves to a bottom bar */
 .bottombar { display: none; }
+@media (max-width: 1300px) {
+  .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .strip .kpi.wide { grid-column: span 2; }
+}
 @media (max-width: 1100px) {
-  .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .strip .kpi:nth-child(3) { border-right: 0; }
-  .strip .kpi:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
   .ov-cards { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
@@ -287,10 +293,8 @@ tr.click:hover td { background: var(--panel-2); }
 }
 @media (max-width: 560px) {
   .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .strip .kpi { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .strip .kpi:nth-child(2n) { border-right: 0; }
-  .strip .kpi:nth-child(3) { border-right: 1px solid var(--line); }
-  .strip .kpi:nth-last-child(-n+2) { border-bottom: 0; }
+  .strip .kpi.wide { grid-column: auto; }
+  .strip .kpi:first-child { grid-column: span 2; }
   .kpi .value { font-size: 19px; }
   .statusline h2 { font-size: 22px; }
   .statusline .updated { margin-left: 0; width: 100%; }
@@ -711,13 +715,20 @@ function render() {
   renderStrip(d); renderChart(d); renderEquity(d); renderPnl(d); renderStats(d); renderControls(d); renderSignals(d); renderNews(d); renderBottom(d);
 }
 
+function openPnl(d) {
+  // what the open trades are worth right now, at their last price (before the exit commission)
+  const rows = (d.open || []).map((t) => ({ symbol: t.symbol, pnl: (t.side === "buy" ? 1 : -1) * (t.last_price - t.entry_fill) * t.qty }));
+  return { rows, total: rows.reduce((x, r) => x + r.pnl, 0), up: rows.filter((r) => r.pnl > 0).length, down: rows.filter((r) => r.pnl < 0).length };
+}
+const glow = (n) => (n > 0 ? "glow-up" : n < 0 ? "glow-down" : "");
 function renderStrip(d) {
-  const a = d.account, r = d.risk;
+  const a = d.account, r = d.risk, op = openPnl(d);
   const usedPct = r.max_daily_loss ? Math.min(100, 100 * r.used_today / r.max_daily_loss) : 0;
   const lvl = usedPct >= 85 ? "high" : usedPct >= 60 ? "mid" : "";
   const pctTot = a.start ? 100 * a.pnl_total / a.start : 0;
   $("strip").innerHTML = `
     <div class="kpi"><div class="label">Capitale</div><div class="value" id="kEquity">${usd(a.equity)}</div><div class="sub">partito da ${usd(a.start)}</div></div>
+    <div class="kpi wide ${op.rows.length ? glow(op.total) : ""}"><div class="label">In corso ora</div><div class="value ${cls(op.total)}" id="kOpen">${op.rows.length ? signed(op.total) : "–"}</div><div class="sub">${op.rows.length ? `${op.rows.length} ${op.rows.length === 1 ? "operazione aperta" : "operazioni aperte"} · ${op.up} in guadagno, ${op.down} in perdita` : "nessuna operazione aperta"}</div></div>
     <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(a.pnl_today)}">${signed(a.pnl_today)}</div><div class="sub">${d.stats.today.closed} chiusi, ${d.open.length} aperti</div></div>
     <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(a.pnl_week)}">${signed(a.pnl_week)}</div><div class="sub">${d.stats.week.closed} trade, ${d.stats.week.win_rate == null ? "–" : nf(d.stats.week.win_rate, 0) + "% vinti"}</div></div>
     <div class="kpi"><div class="label">Totale</div><div class="value ${cls(a.pnl_total)}">${signed(a.pnl_total)}</div><div class="sub">${pct(pctTot)} · ${d.stats.all.closed} trade</div></div>
@@ -1007,12 +1018,19 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("sheet")
 function renderSignals(d) {
   $("sigHint").textContent = d.strategy.setup;
   if (!d.signals.length) { $("signals").innerHTML = '<div class="empty">Il bot non ha ancora guardato nessun titolo oggi.</div>'; return; }
-  $("signals").innerHTML = d.signals.map((x) => `
-    <div class="row-item">
+  const live = Object.fromEntries(openPnl(d).rows.map((r) => [r.symbol, r.pnl]));
+  $("signals").innerHTML = d.signals.map((x) => {
+    const p = live[x.symbol];
+    const right = p !== undefined
+      ? `<span class="right ${cls(p)}">${signed(p)}</span>`
+      : `<span class="right ${x.distance_pct == null ? "" : x.distance_pct >= 0 ? "gain" : "muted"}">${x.distance_pct == null ? "" : pct(x.distance_pct)}</span>`;
+    return `
+    <div class="row-item ${p !== undefined ? glow(p) : ""}">
       <div class="row-head"><span class="sym">${esc(x.symbol)}</span><span class="tag ${x.status}">${SIG[x.status] || x.status}</span>${x.side === "sell" ? '<span class="tag short">short</span>' : ""}
-        <span class="right ${x.distance_pct == null ? "" : x.distance_pct >= 0 ? "gain" : "muted"}">${x.distance_pct == null ? "" : pct(x.distance_pct)}</span></div>
+        ${right}</div>
       <div class="txt">${esc(x.text)}</div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 function renderNews(d) {
   if (!d.news.length) { $("news").innerHTML = '<div class="empty">Nessuna notizia per ora.</div>'; return; }
@@ -1089,6 +1107,8 @@ function renderAll() {
   $("allUpdated").textContent = "Ultimo aggiornamento " + new Date(latest).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   $("allStrip").innerHTML = `
     <div class="kpi"><div class="label">Capitale totale</div><div class="value">${usd(eq)}</div><div class="sub">partito da ${usd(start)}</div></div>
+    ${(() => { const rows = ds.flatMap((d) => openPnl(d).rows), tot = rows.reduce((x, r) => x + r.pnl, 0);
+      return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
     <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(today)}">${signed(today)}</div><div class="sub">${open} trade aperti</div></div>
     <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(week)}">${signed(week)}</div><div class="sub">tre agenti insieme</div></div>
     <div class="kpi"><div class="label">Totale</div><div class="value ${cls(eq - start)}">${signed(eq - start)}</div><div class="sub">${pct(100 * (eq / start - 1))}</div></div>
@@ -1147,7 +1167,8 @@ function previewTick() {
   d.account.pnl_total = Math.round((d.account.pnl_total + diff) * 100) / 100;
   const dir = next > before ? "flash-up" : "flash-down";
   renderLegend(d, dir);
-  const k = $("kEquity"); if (k) { k.textContent = usd(d.account.equity); k.classList.remove("flash-up", "flash-down"); void k.offsetWidth; k.classList.add(dir); }
+  renderStrip(d); renderSignals(d);
+  const k = $("kEquity"); if (k) { k.classList.remove("flash-up", "flash-down"); void k.offsetWidth; k.classList.add(dir); }
 }
 
 /* ------------------------------------------------------------------ live: GitHub as the data source */
