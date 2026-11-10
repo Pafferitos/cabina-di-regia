@@ -142,6 +142,10 @@ main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
 .chip { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 500 12px/1.4 var(--f-mono); color: var(--muted); }
 .chip:hover { color: var(--fg); }
 .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.chip.glow-up { background: var(--gain-bg); border-color: var(--gain); color: var(--gain); }
+.chip.glow-down { background: var(--loss-bg); border-color: var(--loss); color: var(--loss); }
+.chip.glow-up[aria-pressed="true"], .chip.glow-down[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.chip b { font-weight: 600; margin-left: 6px; }
 .chart { height: 360px; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px 14px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -728,10 +732,10 @@ function renderStrip(d) {
   const pctTot = a.start ? 100 * a.pnl_total / a.start : 0;
   $("strip").innerHTML = `
     <div class="kpi"><div class="label">Capitale</div><div class="value" id="kEquity">${usd(a.equity)}</div><div class="sub">partito da ${usd(a.start)}</div></div>
-    <div class="kpi wide ${op.rows.length ? glow(op.total) : ""}"><div class="label">In corso ora</div><div class="value ${cls(op.total)}" id="kOpen">${op.rows.length ? signed(op.total) : "–"}</div><div class="sub">${op.rows.length ? `${op.rows.length} ${op.rows.length === 1 ? "operazione aperta" : "operazioni aperte"} · ${op.up} in guadagno, ${op.down} in perdita` : "nessuna operazione aperta"}</div></div>
     <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(a.pnl_today)}">${signed(a.pnl_today)}</div><div class="sub">${d.stats.today.closed} chiusi, ${d.open.length} aperti</div></div>
     <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(a.pnl_week)}">${signed(a.pnl_week)}</div><div class="sub">${d.stats.week.closed} trade, ${d.stats.week.win_rate == null ? "–" : nf(d.stats.week.win_rate, 0) + "% vinti"}</div></div>
     <div class="kpi"><div class="label">Totale</div><div class="value ${cls(a.pnl_total)}">${signed(a.pnl_total)}</div><div class="sub">${pct(pctTot)} · ${d.stats.all.closed} trade</div></div>
+    <div class="kpi wide ${op.rows.length ? glow(op.total) : ""}"><div class="label">In corso ora</div><div class="value ${cls(op.total)}" id="kOpen">${op.rows.length ? signed(op.total) : "–"}</div><div class="sub">${op.rows.length ? `${op.rows.length} ${op.rows.length === 1 ? "operazione aperta" : "operazioni aperte"} · ${op.up} in guadagno, ${op.down} in perdita` : "nessuna operazione aperta"}</div></div>
     <div class="kpi"><div class="label">Rischio usato oggi</div><div class="value">${usd(r.used_today)}</div><div class="sub">su ${usd(r.max_daily_loss)} al giorno · aperto ${usd(r.open_risk)}</div><div class="meter"><i class="${lvl}" style="width:${usedPct}%"></i></div></div>
     <div class="kpi"><div class="label">Trade oggi</div><div class="value">${r.trades_today} / ${r.max_trades_per_day}</div><div class="sub">max ${usd(r.max_loss_per_trade)} a trade</div><div class="meter"><i class="${r.trades_today >= r.max_trades_per_day ? "high" : ""}" style="width:${Math.min(100, 100 * r.trades_today / (r.max_trades_per_day || 1))}%"></i></div></div>`;
 }
@@ -757,7 +761,13 @@ function renderChart(d) {
   const el = $("chart"); el.innerHTML = ""; liveSeries = null;
   if (!syms.length) { el.innerHTML = '<div class="empty">Nessun grafico: il bot non ha ancora letto dati oggi.</div>'; $("symChips").innerHTML = ""; $("chartLegend").innerHTML = ""; return; }
   if (!state.sym || !syms.includes(state.sym)) state.sym = syms[0];
-  $("symChips").innerHTML = syms.map((s) => `<button class="chip" aria-pressed="${s === state.sym}" data-sym="${s}">${s}</button>`).join("");
+  const live = Object.fromEntries(openPnl(d).rows.map((r) => [r.symbol, r.pnl]));
+  // open trades first, each chip lit by its trade's result right now
+  const ordered = syms.slice().sort((a, b) => (live[b] !== undefined) - (live[a] !== undefined));
+  $("symChips").innerHTML = ordered.map((s) => {
+    const p = live[s];
+    return `<button class="chip ${p !== undefined ? glow(p) : ""}" aria-pressed="${s === state.sym}" data-sym="${s}">${s}${p !== undefined ? `<b>${signed(p)}</b>` : ""}</button>`;
+  }).join("");
   $("symChips").querySelectorAll("button").forEach((b) => b.onclick = () => { state.sym = b.dataset.sym; render(); });
   const isCrypto = d.agent === "crypto";
   const shift = isCrypto ? 0 : PREVIEW ? NY_OFFSET : nyOffset(d.bars[state.sym][0][0]);
@@ -1107,11 +1117,11 @@ function renderAll() {
   $("allUpdated").textContent = "Ultimo aggiornamento " + new Date(latest).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   $("allStrip").innerHTML = `
     <div class="kpi"><div class="label">Capitale totale</div><div class="value">${usd(eq)}</div><div class="sub">partito da ${usd(start)}</div></div>
-    ${(() => { const rows = ds.flatMap((d) => openPnl(d).rows), tot = rows.reduce((x, r) => x + r.pnl, 0);
-      return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
     <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(today)}">${signed(today)}</div><div class="sub">${open} trade aperti</div></div>
     <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(week)}">${signed(week)}</div><div class="sub">tre agenti insieme</div></div>
     <div class="kpi"><div class="label">Totale</div><div class="value ${cls(eq - start)}">${signed(eq - start)}</div><div class="sub">${pct(100 * (eq / start - 1))}</div></div>
+    ${(() => { const rows = ds.flatMap((d) => openPnl(d).rows), tot = rows.reduce((x, r) => x + r.pnl, 0);
+      return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
     <div class="kpi"><div class="label">Trade chiusi</div><div class="value">${closed}</div><div class="sub">${closed ? nf(100 * wins / closed, 0) + "% vinti" : "–"}</div></div>
     <div class="kpi"><div class="label">Agenti attivi</div><div class="value">${ds.filter((d) => d.status === "running").length} / 3</div><div class="sub">${ds.filter((d) => d.paused).length} in pausa · ${ds.filter(isStale).length} fermi</div></div>`;
   $("ovCards").innerHTML = ds.map((d) => {
