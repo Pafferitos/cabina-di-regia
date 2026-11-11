@@ -252,7 +252,11 @@ tr.click:hover td { background: var(--panel-2); }
 .kv dd { margin: 0; font-family: var(--f-mono); text-align: right; overflow-wrap: anywhere; }
 
 /* overview */
-.ov-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.ov-cards { display: grid; gap: 14px; }
+.ov-group { display: grid; gap: 8px; }
+tr.group td { font: 600 12px var(--f-display); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; padding-top: 14px; }
+.ov-group h3.ov-title { font: 600 13px var(--f-display); margin: 0; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.ov-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .ov-card { display: grid; gap: 10px; padding: 16px; text-align: left; cursor: pointer; }
 .ov-card:hover { border-color: var(--accent); }
 .ov-card .top-row { display: flex; align-items: center; gap: 10px; }
@@ -302,7 +306,10 @@ tr.click:hover td { background: var(--panel-2); }
   .strip .kpi.wide { grid-column: span 2; }
 }
 @media (max-width: 1100px) {
-  .ov-cards { grid-template-columns: minmax(0, 1fr); }
+  .ov-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .ov-row { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .grid { grid-template-columns: minmax(0, 1fr); }
@@ -1204,7 +1211,7 @@ function renderAll() {
       return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
     <div class="kpi"><div class="label">Trade chiusi</div><div class="value">${closed}</div><div class="sub">${closed ? nf(100 * wins / closed, 0) + "% vinti" : "–"}</div></div>
     <div class="kpi"><div class="label">Agenti attivi</div><div class="value">${ds.filter((d) => d.status === "running").length} / ${ds.length}</div><div class="sub">${ds.filter((d) => d.paused).length} in pausa · ${ds.filter(isStale).length} fermi</div></div>`;
-  $("ovCards").innerHTML = ds.map((d) => {
+  const card = (d) => {
     const botPct = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0;
     return `<button class="panel ov-card" data-agent="${d.agent}">
       <div class="top-row"><span class="dot ${dotOf(d)}"></span><h3>${esc(d.name)}</h3><span class="pill ${d.status}" style="margin-left:auto">${STATUS[d.status]}</span></div>
@@ -1216,7 +1223,10 @@ function renderAll() {
         <div><small>Vinti</small><b>${d.stats.all.win_rate == null ? "–" : nf(d.stats.all.win_rate, 0) + "%"}</b></div>
         <div><small>vs ${d.benchmark ? esc(d.benchmark.symbol) : "mercato"}</small><b class="${d.benchmark ? cls(botPct - d.benchmark.pct) : ""}">${d.benchmark ? pct(botPct - d.benchmark.pct) : "–"}</b></div>
       </div></button>`;
-  }).join("");
+  };
+  const fastKeys = REAL.filter((k) => !BASE_OF[k]), slowKeys = fastKeys.map((k) => SLOW_OF[k]).filter(Boolean);
+  $("ovCards").innerHTML = [["Veloci · day trading, entrano ed escono in giornata", fastKeys], ["Lenti · decidono una volta al giorno e tengono per giorni o settimane", slowKeys]]
+    .map(([title, keys]) => `<div class="ov-group"><h3 class="ov-title">${title}</h3><div class="ov-row">${keys.map((k) => card(state.data[k])).join("")}</div></div>`).join("");
   $("ovCards").querySelectorAll("button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
   const el = $("allChart"); el.innerHTML = "";
   const colors = { stocks: tok("--accent"), etf: tok("--info"), mercati: tok("--mkt"), crypto: tok("--bench") };
@@ -1229,13 +1239,13 @@ function renderAll() {
   } else el.innerHTML = '<div class="empty">Le curve compaiono dopo i primi giorni di trading.</div>';
   $("allLegend").innerHTML = ds.map((d) => `<span><i style="background:${colors[d.agent]}"></i>${esc(d.name)}${(d.equity_curve || []).length > 1 ? "" : " (ancora nessun dato)"}</span>`).join("");
   $("allTable").innerHTML = `<table><thead><tr><th>Agente</th><th>Stato</th><th class="r">Capitale</th><th class="r">Oggi</th><th class="r">Settimana</th><th class="r">Totale</th><th class="r">Trade</th><th class="r">Vinti</th><th class="r">Calo max</th><th class="r">vs mercato</th></tr></thead><tbody>
-    ${ds.map((d) => { const bp = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0; return `<tr class="click" data-agent="${d.agent}">
+    ${[["Veloci", REAL.filter((k) => !BASE_OF[k])], ["Lenti", REAL.filter((k) => BASE_OF[k])]].map(([g, keys]) => `<tr class="group"><td colspan="10">${g}</td></tr>` + keys.map((k) => state.data[k]).map((d) => { const bp = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0; return `<tr class="click" data-agent="${d.agent}">
       <td><b>${esc(d.name)}</b></td><td><span class="pill ${d.status}">${STATUS[d.status]}</span></td><td class="r num">${usd(d.account.equity)}</td>
       <td class="r num ${cls(d.account.pnl_today)}">${signed(d.account.pnl_today)}</td><td class="r num ${cls(d.account.pnl_week)}">${signed(d.account.pnl_week)}</td>
       <td class="r num ${cls(d.account.pnl_total)}">${signed(d.account.pnl_total)}</td><td class="r num">${d.stats.all.closed}</td>
       <td class="r num">${d.stats.all.win_rate == null ? "–" : nf(d.stats.all.win_rate, 0) + "%"}</td>
       <td class="r num ${d.drawdown && d.drawdown.abs < 0 ? "loss" : ""}">${d.drawdown && d.drawdown.abs < 0 ? pct(d.drawdown.pct) : "–"}</td>
-      <td class="r num ${d.benchmark ? cls(bp - d.benchmark.pct) : ""}">${d.benchmark ? pct(bp - d.benchmark.pct) : "–"}</td></tr>`; }).join("")}
+      <td class="r num ${d.benchmark ? cls(bp - d.benchmark.pct) : ""}">${d.benchmark ? pct(bp - d.benchmark.pct) : "–"}</td></tr>`; }).join("")).join("")}
     </tbody></table>`;
   $("allTable").querySelectorAll("tr.click").forEach((tr) => tr.onclick = () => selectAgent(tr.dataset.agent, true));
 }
