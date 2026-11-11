@@ -96,6 +96,10 @@ main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
 /* status line + account strip */
 .statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .statusline h2 { font: 700 26px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.speed { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; gap: 2px; }
+.speed button { border: 0; background: transparent; color: var(--muted); font: 600 12px var(--f-body, inherit); padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.speed button[aria-selected="true"] { background: var(--accent); color: var(--bg); }
+.speed button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
 .pill.running { background: var(--gain-bg); color: var(--gain); }
 .pill.paused { background: var(--warn-bg); color: var(--warn); }
@@ -361,6 +365,7 @@ tr.click:hover td { background: var(--panel-2); }
   <div id="agentView" hidden style="display:grid;gap:16px">
     <section class="statusline">
       <h2 id="agentName">Azioni</h2>
+      <div class="speed" id="speedToggle" role="tablist" aria-label="Versione dell'agente"></div>
       <span class="pill" id="statusPill"></span>
       <span class="mkt" id="mktPill" hidden></span>
       <span class="updated" id="updated"></span>
@@ -660,13 +665,32 @@ const SAMPLE = (() => {
     }
   });
   mercati.equity_curve = []; mercati.benchmark = null;
-  return { stocks, etf, mercati, crypto };
+  const slowStub = (agent, name, wl, bench) => {
+    const d = build({ start: 559, open: [], today: [], past: [], benchSym: bench, benchDrift: .0006, benchVol: .016,
+      rest: { agent, name, status: "running", status_label: "Attivo: decide una volta al giorno", paused: false, updated_at: "2026-11-09T21:10:00Z",
+        risk: { max_loss_per_trade: 0, max_daily_loss: 0, used_today: 0, open_risk: 0, trades_today: 0, max_trades_per_day: 0 },
+        open: [], rules: Object.assign({}, baseRules, { allow_short: false, flat_by: "tiene anche di notte" }),
+        strategy: Object.assign({}, baseStrategy, { setup: "lento, solo long (esempio)", watchlist: wl }), bars: {},
+        signals: wl.map((s) => ({ symbol: s, status: "waiting", text: "esempio: sopra o sotto la media" })), news: [],
+        events: [ { at: "2026-11-09 16:10", text: "Esempio: agente lento, decide a fine giornata" } ] } });
+    d.equity_curve = []; d.benchmark = null; return d;
+  };
+  return { stocks, etf, mercati, crypto,
+           azioni_lento: slowStub("azioni_lento", "Azioni lento", ["LLY", "TSLA", "DIS"], "SPY"),
+           etf_lento: slowStub("etf_lento", "ETF lento", ["SPY"], "SPY"),
+           mercati_lento: slowStub("mercati_lento", "Mercati lento", ["NVDA", "MU", "SPY", "GLD"], "SPY"),
+           crypto_lento: slowStub("crypto_lento", "Crypto lento", ["BTC-USD", "ETH-USD"], "BTC-USD") };
 })();
 
 /* ------------------------------------------------------------------ helpers */
 const $ = (id) => document.getElementById(id);
 const AGENTS = [["all", "Tutti", "tutti"], ["stocks", "Azioni", "azioni"], ["etf", "ETF", "etf"], ["mercati", "Mercati", "mercati"], ["crypto", "Crypto", "crypto"]];
-const REAL = ["stocks", "etf", "mercati", "crypto"];
+const REAL = ["stocks", "etf", "mercati", "crypto", "azioni_lento", "etf_lento", "mercati_lento", "crypto_lento"];
+const SLOW_OF = { stocks: "azioni_lento", etf: "etf_lento", mercati: "mercati_lento", crypto: "crypto_lento" };
+const BASE_OF = Object.fromEntries(Object.entries(SLOW_OF).map(([a, b]) => [b, a]));
+const SLOW_VIEWS = [["azioni_lento", "Azioni lento", "azioni-lento"], ["etf_lento", "ETF lento", "etf-lento"],
+                    ["mercati_lento", "Mercati lento", "mercati-lento"], ["crypto_lento", "Crypto lento", "crypto-lento"]];
+const ALL_VIEWS = AGENTS.concat(SLOW_VIEWS);
 const nf = (n, d = 2) => Number(n).toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d });
 const usd = (n) => (n < 0 ? "−$" : "$") + nf(Math.abs(n));
 const signed = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + "$" + nf(Math.abs(n));
@@ -720,9 +744,10 @@ function navButtons(compact) {
   return AGENTS.map(([key, name]) => {
     const d = key === "all" ? null : state.data[key];
     const dot = key === "all" ? (REAL.some((k) => isStale(state.data[k])) ? "stale" : "all") : dotOf(d);
+    const sel = key === state.agent || BASE_OF[state.agent] === key;
     return compact
-      ? `<button role="tab" data-agent="${key}" aria-selected="${key === state.agent}"><span class="dot ${dot}"></span>${name}</button>`
-      : `<button class="agent-tab" role="tab" data-agent="${key}" aria-selected="${key === state.agent}"><span class="dot ${dot}"></span>${name}</button>`;
+      ? `<button role="tab" data-agent="${key}" aria-selected="${sel}"><span class="dot ${dot}"></span>${name}</button>`
+      : `<button class="agent-tab" role="tab" data-agent="${key}" aria-selected="${sel}"><span class="dot ${dot}"></span>${name}</button>`;
   }).join("");
 }
 function renderNav() {
@@ -732,7 +757,7 @@ function renderNav() {
 }
 function selectAgent(key, push) {
   state.agent = key; state.sym = null;
-  if (push) history.replaceState(null, "", "#" + AGENTS.find((a) => a[0] === key)[2]);
+  if (push) history.replaceState(null, "", "#" + ALL_VIEWS.find((a) => a[0] === key)[2]);
   render();
   window.scrollTo({ top: 0 });
 }
@@ -748,13 +773,21 @@ function render() {
   if (all) return renderAll();
   const d = state.data[state.agent];
   $("agentName").textContent = d.name;
+  const base = BASE_OF[state.agent] || state.agent;
+  const sp = $("speedToggle");
+  sp.hidden = !SLOW_OF[base];
+  if (SLOW_OF[base]) {
+    sp.innerHTML = [[base, "Veloce", "intraday: entra ed esce in giornata"], [SLOW_OF[base], "Lento", "decide una volta al giorno e tiene per giorni o settimane"]]
+      .map(([k, label, tip]) => `<button role="tab" data-agent="${k}" title="${tip}" aria-selected="${k === state.agent}">${label}</button>`).join("");
+    sp.querySelectorAll("button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
+  }
   const pill = $("statusPill"); pill.className = "pill " + d.status; pill.textContent = STATUS[d.status] || d.status; pill.title = d.status_label;
   const mk = $("mktPill"), mv = d.market;
   mk.hidden = mv === undefined || mv === null;
   if (!mk.hidden) {
     mk.className = "mkt " + (mv > 0 ? "up" : mv < 0 ? "down" : "");
     mk.textContent = "Mercato ora: " + (mv > 0 ? "▲ in salita" : mv < 0 ? "▼ in discesa" : "● incerto");
-    mk.title = d.agent === "crypto" ? "BTC ed ETH: prezzo rispetto al VWAP e trend delle medie" : "SPY e QQQ: prezzo rispetto al VWAP e trend delle medie";
+    mk.title = (d.agent === "crypto" || d.agent === "crypto_lento") ? "BTC ed ETH: prezzo rispetto al VWAP e trend delle medie" : "SPY e QQQ: prezzo rispetto al VWAP e trend delle medie";
   }
   $("updated").textContent = "Aggiornato " + new Date(d.updated_at).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + d.status_label;
   const st = $("staleAlert");
@@ -816,9 +849,9 @@ function renderChart(d) {
     return `<button class="chip ${p !== undefined ? glow(p) : ""}" aria-pressed="${s === state.sym}" data-sym="${s}">${s}${p !== undefined ? `<b>${signed(p)}</b>` : ""}</button>`;
   }).join("");
   $("symChips").querySelectorAll("button").forEach((b) => b.onclick = () => { state.sym = b.dataset.sym; render(); });
-  const isCrypto = d.agent === "crypto";
+  const isCrypto = (d.agent === "crypto" || d.agent === "crypto_lento");
   const shift = isCrypto ? 0 : PREVIEW ? NY_OFFSET : nyOffset(d.bars[state.sym][0][0]);
-  $("chartHint").textContent = isCrypto ? (PREVIEW ? "candele da 15 minuti · ora UTC" : "candele da 1 ora · ora UTC") : "candele da 5 minuti · ora di New York";
+  $("chartHint").textContent = BASE_OF[d.agent] ? "chiusure giornaliere degli ultimi 3 mesi" : isCrypto ? (PREVIEW ? "candele da 15 minuti · ora UTC" : "candele da 1 ora · ora UTC") : "candele da 5 minuti · ora di New York";
   const ch = baseChart(el);
   const s = ch.addCandlestickSeries({ upColor: tok("--gain"), downColor: tok("--loss"), borderVisible: false, wickUpColor: tok("--gain"), wickDownColor: tok("--loss") });
   s.setData(d.bars[state.sym].map(([t, o, h, l, c]) => ({ time: t + shift, open: o, high: h, low: l, close: c })));
@@ -958,7 +991,7 @@ function renderStats(d) {
       <div><h4>Per titolo</h4><div class="table-wrap"><table><thead><tr><th>Titolo</th><th class="r">Trade</th><th class="r">Vinti</th><th class="r">Netto</th></tr></thead><tbody>
         ${syms.slice(0, 8).map(([s, v]) => `<tr><td class="sym">${esc(s)}</td><td class="r num">${v.n}</td><td class="r num">${nf(100 * v.w / v.n, 0)}%</td><td class="r num ${cls(v.net)}">${signed(v.net)}</td></tr>`).join("")}
       </tbody></table></div></div>
-      <div><h4>Per ora d'entrata (${d.agent === "crypto" ? "UTC" : "New York"})</h4><div class="hours">
+      <div><h4>Per ora d'entrata (${(d.agent === "crypto" || d.agent === "crypto_lento") ? "UTC" : "New York"})</h4><div class="hours">
         ${hours.map(([h, s]) => { const w = 50 * Math.abs(s.net) / maxAbs; return `<div class="hour"><span class="num muted">${h}:00</span>
           <span class="track"><span class="bar" style="${s.net >= 0 ? "left:50%" : "right:50%"};width:${w}%;background:${s.net >= 0 ? tok("--gain") : tok("--loss")}"></span></span>
           <span class="num r ${cls(s.net)}" style="text-align:right">${signed(s.net)}</span></div>`; }).join("")}
@@ -1170,7 +1203,7 @@ function renderAll() {
     ${(() => { const rows = ds.flatMap((d) => openPnl(d).rows), tot = rows.reduce((x, r) => x + r.pnl, 0);
       return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
     <div class="kpi"><div class="label">Trade chiusi</div><div class="value">${closed}</div><div class="sub">${closed ? nf(100 * wins / closed, 0) + "% vinti" : "–"}</div></div>
-    <div class="kpi"><div class="label">Agenti attivi</div><div class="value">${ds.filter((d) => d.status === "running").length} / 3</div><div class="sub">${ds.filter((d) => d.paused).length} in pausa · ${ds.filter(isStale).length} fermi</div></div>`;
+    <div class="kpi"><div class="label">Agenti attivi</div><div class="value">${ds.filter((d) => d.status === "running").length} / ${ds.length}</div><div class="sub">${ds.filter((d) => d.paused).length} in pausa · ${ds.filter(isStale).length} fermi</div></div>`;
   $("ovCards").innerHTML = ds.map((d) => {
     const botPct = d.account.start ? 100 * d.account.pnl_total / d.account.start : 0;
     return `<button class="panel ov-card" data-agent="${d.agent}">
@@ -1187,10 +1220,11 @@ function renderAll() {
   $("ovCards").querySelectorAll("button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
   const el = $("allChart"); el.innerHTML = "";
   const colors = { stocks: tok("--accent"), etf: tok("--info"), mercati: tok("--mkt"), crypto: tok("--bench") };
+  Object.entries(SLOW_OF).forEach(([a, b]) => { colors[b] = colors[a]; });
   const withCurve = ds.filter((d) => (d.equity_curve || []).length > 1);
   if (withCurve.length) {
     const ch = baseChart(el, { timeScale: { borderColor: tok("--line"), timeVisible: false }, handleScroll: false, handleScale: false });
-    withCurve.forEach((d) => ch.addLineSeries({ color: colors[d.agent], lineWidth: 2, priceLineVisible: false }).setData(d.equity_curve.map((p) => ({ time: p.date, value: p.equity }))));
+    withCurve.forEach((d) => ch.addLineSeries({ color: colors[d.agent], lineWidth: 2, lineStyle: BASE_OF[d.agent] ? 2 : 0, priceLineVisible: false }).setData(d.equity_curve.map((p) => ({ time: p.date, value: p.equity }))));
     ch.timeScale().fitContent();
   } else el.innerHTML = '<div class="empty">Le curve compaiono dopo i primi giorni di trading.</div>';
   $("allLegend").innerHTML = ds.map((d) => `<span><i style="background:${colors[d.agent]}"></i>${esc(d.name)}${(d.equity_curve || []).length > 1 ? "" : " (ancora nessun dato)"}</span>`).join("");
@@ -1282,7 +1316,8 @@ const Live = (() => {
     return out;
   }
   function emptyAgent(k) {
-    const name = { stocks: "Azioni", etf: "ETF", mercati: "Mercati scelti", crypto: "Crypto" }[k];
+    const name = { stocks: "Azioni", etf: "ETF", mercati: "Mercati scelti", crypto: "Crypto", azioni_lento: "Azioni lento",
+                   etf_lento: "ETF lento", mercati_lento: "Mercati lento", crypto_lento: "Crypto lento" }[k];
     return { agent: k, name, status: "closed", status_label: "Ancora nessun dato dal bot", paused: true, updated_at: new Date(0).toISOString(), date: "",
       account: { start: 0, equity: 0, cash: 0, pnl_total: 0, pnl_today: 0, pnl_week: 0 },
       stats: { today: { closed: 0, wins: 0, losses: 0, win_rate: null }, week: { closed: 0, wins: 0, losses: 0, win_rate: null }, all: { closed: 0, wins: 0, losses: 0, win_rate: null } },
@@ -1459,7 +1494,7 @@ const Chat = (() => {
 
 /* ------------------------------------------------------------------ start */
 function fromHash() {
-  const h = location.hash.replace("#", ""); const a = AGENTS.find((x) => x[2] === h);
+  const h = location.hash.replace("#", ""); const a = ALL_VIEWS.find((x) => x[2] === h);
   if (a) state.agent = a[0];
 }
 window.addEventListener("hashchange", () => { fromHash(); state.sym = null; render(); });
