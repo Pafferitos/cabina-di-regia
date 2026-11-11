@@ -29,6 +29,7 @@
   --warn: #e8a33d;
   --info: #5aa2f0;
   --bench: #a78bfa;       /* the benchmark line, apart from gains and losses */
+  --mkt: #2dd4bf;         /* the Mercati scelti agent's line in the overview */
   --gain-bg: rgba(47, 191, 138, .12);
   --loss-bg: rgba(240, 86, 106, .12);
   --warn-bg: rgba(232, 163, 61, .13);
@@ -247,7 +248,7 @@ tr.click:hover td { background: var(--panel-2); }
 .kv dd { margin: 0; font-family: var(--f-mono); text-align: right; overflow-wrap: anywhere; }
 
 /* overview */
-.ov-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.ov-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .ov-card { display: grid; gap: 10px; padding: 16px; text-align: left; cursor: pointer; }
 .ov-card:hover { border-color: var(--accent); }
 .ov-card .top-row { display: flex; align-items: center; gap: 10px; }
@@ -436,7 +437,7 @@ tr.click:hover td { background: var(--panel-2); }
     <section class="statusline"><h2>Tutti gli agenti</h2><span class="updated" id="allUpdated"></span></section>
     <section class="strip" id="allStrip" aria-label="Totale"></section>
     <div class="ov-cards" id="ovCards"></div>
-    <section class="panel" aria-label="Capitale dei tre agenti">
+    <section class="panel" aria-label="Capitale degli agenti">
       <header><h3>Capitale a confronto</h3><span class="hint">fine giornata, ogni agente partito dal suo budget</span></header>
       <div class="eq-chart" id="allChart"></div>
       <div class="chart-legend" id="allLegend"></div>
@@ -646,13 +647,26 @@ const SAMPLE = (() => {
     }
   });
   crypto.equity_curve = []; crypto.benchmark = null;
-  return { stocks, etf, crypto };
+  const mercati = build({
+    start: 1000, open: [], today: [], past: [], benchSym: "SPY", benchDrift: .0006, benchVol: .016,
+    rest: {
+      agent: "mercati", name: "Mercati scelti", status: "running", status_label: "Attivo", paused: false, updated_at: "2026-11-09T16:40:00Z",
+      risk: { max_loss_per_trade: 20, max_daily_loss: 150, used_today: 0, open_risk: 0, trades_today: 0, max_trades_per_day: 3 },
+      open: [], rules: Object.assign({}, baseRules, { max_loss_per_trade_usd: 20, max_daily_loss_usd: 150, allow_short: true }),
+      strategy: Object.assign({}, baseStrategy, { watchlist: ["NVDA", "MU", "SPY", "GLD"] }),
+      bars: { NVDA: bars(168.4, 26, .004, -.0003), GLD: bars(368.2, 26, .002, .0001) },
+      signals: ["NVDA", "MU", "SPY", "GLD"].map((s) => ({ symbol: s, status: "waiting", text: "esempio: in attesa di 5 segnali su 5" })),
+      news: [], events: [ { at: "2026-11-09 09:30", text: "Esempio: agente Mercati scelti (NVDA, MU, S&P 500, oro)" } ]
+    }
+  });
+  mercati.equity_curve = []; mercati.benchmark = null;
+  return { stocks, etf, mercati, crypto };
 })();
 
 /* ------------------------------------------------------------------ helpers */
 const $ = (id) => document.getElementById(id);
-const AGENTS = [["all", "Tutti", "tutti"], ["stocks", "Azioni", "azioni"], ["etf", "ETF", "etf"], ["crypto", "Crypto", "crypto"]];
-const REAL = ["stocks", "etf", "crypto"];
+const AGENTS = [["all", "Tutti", "tutti"], ["stocks", "Azioni", "azioni"], ["etf", "ETF", "etf"], ["mercati", "Mercati", "mercati"], ["crypto", "Crypto", "crypto"]];
+const REAL = ["stocks", "etf", "mercati", "crypto"];
 const nf = (n, d = 2) => Number(n).toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d });
 const usd = (n) => (n < 0 ? "−$" : "$") + nf(Math.abs(n));
 const signed = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + "$" + nf(Math.abs(n));
@@ -1151,7 +1165,7 @@ function renderAll() {
   $("allStrip").innerHTML = `
     <div class="kpi"><div class="label">Capitale totale</div><div class="value">${usd(eq)}</div><div class="sub">partito da ${usd(start)}</div></div>
     <div class="kpi"><div class="label">Oggi</div><div class="value ${cls(today)}">${signed(today)}</div><div class="sub">${open} trade aperti</div></div>
-    <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(week)}">${signed(week)}</div><div class="sub">tre agenti insieme</div></div>
+    <div class="kpi"><div class="label">Settimana</div><div class="value ${cls(week)}">${signed(week)}</div><div class="sub">tutti gli agenti insieme</div></div>
     <div class="kpi"><div class="label">Totale</div><div class="value ${cls(eq - start)}">${signed(eq - start)}</div><div class="sub">${pct(100 * (eq / start - 1))}</div></div>
     ${(() => { const rows = ds.flatMap((d) => openPnl(d).rows), tot = rows.reduce((x, r) => x + r.pnl, 0);
       return `<div class="kpi wide ${rows.length ? glow(tot) : ""}"><div class="label">In corso ora</div><div class="value ${cls(tot)}">${rows.length ? signed(tot) : "–"}</div><div class="sub">${rows.length ? rows.length + " operazioni aperte · " + rows.filter((r) => r.pnl > 0).length + " in guadagno, " + rows.filter((r) => r.pnl < 0).length + " in perdita" : "nessuna operazione aperta"}</div></div>`; })()}
@@ -1172,7 +1186,7 @@ function renderAll() {
   }).join("");
   $("ovCards").querySelectorAll("button").forEach((b) => b.onclick = () => selectAgent(b.dataset.agent, true));
   const el = $("allChart"); el.innerHTML = "";
-  const colors = { stocks: tok("--accent"), etf: tok("--info"), crypto: tok("--bench") };
+  const colors = { stocks: tok("--accent"), etf: tok("--info"), mercati: tok("--mkt"), crypto: tok("--bench") };
   const withCurve = ds.filter((d) => (d.equity_curve || []).length > 1);
   if (withCurve.length) {
     const ch = baseChart(el, { timeScale: { borderColor: tok("--line"), timeVisible: false }, handleScroll: false, handleScale: false });
@@ -1268,7 +1282,7 @@ const Live = (() => {
     return out;
   }
   function emptyAgent(k) {
-    const name = { stocks: "Azioni", etf: "ETF", crypto: "Crypto" }[k];
+    const name = { stocks: "Azioni", etf: "ETF", mercati: "Mercati scelti", crypto: "Crypto" }[k];
     return { agent: k, name, status: "closed", status_label: "Ancora nessun dato dal bot", paused: true, updated_at: new Date(0).toISOString(), date: "",
       account: { start: 0, equity: 0, cash: 0, pnl_total: 0, pnl_today: 0, pnl_week: 0 },
       stats: { today: { closed: 0, wins: 0, losses: 0, win_rate: null }, week: { closed: 0, wins: 0, losses: 0, win_rate: null }, all: { closed: 0, wins: 0, losses: 0, win_rate: null } },
