@@ -156,7 +156,8 @@ tr:last-child td { border-bottom: 0; }
 
     <div class="grid2">
       <section class="card"><h2>Posizione aperta</h2><div class="list" id="open"></div></section>
-      <section class="card"><h2>Il Dubbio: ultime decisioni</h2><div class="list scroll" id="verdicts"></div></section>
+      <section class="card"><h2>Il Dubbio: ha aiutato?</h2><div class="item" id="doubtBalance" style="border-top:0"></div>
+        <h2 style="padding-top:6px">Ultime decisioni</h2><div class="list scroll" id="verdicts"></div></section>
     </div>
 
     <section class="card">
@@ -200,7 +201,10 @@ const SAMPLE = (() => {
              { date: "2026-11-18", symbol: "GLD", side: "sell", qty: 40, entry_time: "09:50", entry: 300.1, exit_time: "10:05", exit: 299.3, net: 30, r: 0.6, status: "chiuso" },
              { date: "2026-11-18", symbol: "QQQ", side: "buy", qty: 18, entry_time: "10:15", entry: 512.4, net: null, status: "aperto" }],
     verdetti: [{ at: t("10:15"), symbol: "QQQ", lato: "buy", proposta: "long 5 su 5: rottura, trend, VWAP, slancio, mercato", veti: [], avvisi: ["finestra d'ingresso quasi chiusa"], regole: null, esito: "inviato" },
-               { at: t("10:00"), symbol: "SPY", lato: "buy", proposta: "long 5 su 5", veti: ["il prezzo è già scappato di 0,45 R dal segnale: entrerei tardi"], avvisi: [], regole: null, esito: "scartato" }],
+               { at: t("10:00"), symbol: "SPY", lato: "buy", proposta: "long 5 su 5", veti: ["il prezzo è già scappato di 0,45 R dal segnale: entrerei tardi"], avvisi: [], regole: null, esito: "scartato", esito_ombra: -1 }],
+    dubbio_bilancio: { dubbio: { fermati: 5, valutati: 4, perdite_evitate: 3, guadagni_persi: 1, saldo_r: 1.0, saldo_usd: 50 },
+                       dubbio_oggi: { fermati: 1, valutati: 1, perdite_evitate: 1, guadagni_persi: 0, saldo_r: 1, saldo_usd: 50 },
+                       regole: { fermati: 0, valutati: 0, perdite_evitate: 0, guadagni_persi: 0, saldo_r: 0, saldo_usd: 0 } },
     eventi: [{ at: t("09:25:02"), text: "Avvio: conto Alpaca demo, conto FTMO virtuale 10.142,50 $" }, { at: t("10:15:04"), text: "QQQ LONG INVIATO: 18 a mercato" }],
     notizie: [{ at: "2026-11-18T15:20:00Z", titolo: "Nvidia earnings preview: what to expect", fonte: "benzinga", forte: false }],
     regole: { ftmo: { obiettivo_pct: 10, perdita_giornaliera_pct: 3, perdita_massima_pct: 10, costanza_pct: 50 },
@@ -283,13 +287,23 @@ function render() {
       <span class="r ${cls(t.pl)}">${t.pl == null ? "–" : signed(t.pl)}</span></div>
       <div class="t">${t.qty} a ${t.entry ? nf(t.entry) : "…"} · ora ${t.prezzo ? nf(t.prezzo) : "–"} · stop ${nf(t.stop)}${t.target ? " · target " + nf(t.target) : ""}</div></div>`).join("")
     : '<div class="empty">Nessuna posizione aperta</div>';
-  // the doubter
+  // the doubter: was it worth it?
+  const db = d.dubbio_bilancio, dd = db && db.dubbio;
+  $("doubtBalance").innerHTML = !db ? '<div class="t">Bilancio misurato solo nella sezione Veloce, dove ogni proposta fermata viene rigiocata a fine giornata.</div>'
+    : !dd.fermati ? '<div class="t">Il Dubbio non ha ancora fermato nessuna proposta.</div>'
+    : !dd.valutati ? `<div class="t">Ha fermato ${dd.fermati} ${dd.fermati === 1 ? "proposta" : "proposte"}: il risultato si vede dopo la chiusura.</div>`
+    : `<div class="h"><span class="tag ${dd.saldo_r >= 0 ? "ok" : "no"}">${dd.saldo_r > 0 ? "VANTAGGIOSO" : dd.saldo_r < 0 ? "SVANTAGGIOSO" : "IN PARI"}</span>
+        <span class="r num ${cls(dd.saldo_usd)}">${signed(dd.saldo_usd)}</span></div>
+       <div class="t">Ha fermato ${dd.fermati} proposte: ${dd.perdite_evitate} sarebbero andate in perdita (soldi risparmiati), ${dd.guadagni_persi} in guadagno (occasioni perse).
+       Bilancio ${dd.saldo_r >= 0 ? "+" : "−"}${nf(Math.abs(dd.saldo_r))} R${db.dubbio_oggi.valutati ? ", oggi " + signed(db.dubbio_oggi.saldo_usd) : ""}.</div>`;
+  const shadow = (v) => v.esito !== "scartato" ? "" : v.esito_ombra == null ? '<div class="t muted">Risultato se fosse entrato: dopo la chiusura</div>'
+    : `<div class="t ${v.esito_ombra < 0 ? "gain" : "loss"}">Se fosse entrato: ${v.esito_ombra >= 0 ? "+" : "−"}${nf(Math.abs(v.esito_ombra))} R · ${v.esito_ombra < 0 ? "il Dubbio ha fatto bene" : "il Dubbio ha fatto perdere un'occasione"}</div>`;
   $("verdicts").innerHTML = d.verdetti.length ? d.verdetti.slice().reverse().map((v) => `<div class="item"><div class="h">
       <span class="sym">${esc(v.symbol)}</span><span class="tag ${v.esito === "inviato" ? "ok" : "no"}">${v.esito === "inviato" ? "ORDINE INVIATO" : "FERMATO"}</span>
       <span class="r muted">${esc(v.at.slice(11, 16))}</span></div><div class="t">${esc(v.proposta)}</div>
       ${v.veti.map((x) => `<div class="t" style="color:var(--loss)">✗ ${esc(x)}</div>`).join("")}
       ${v.regole ? `<div class="t" style="color:var(--loss)">✗ regole: ${esc(v.regole)}</div>` : ""}
-      ${v.avvisi.map((x) => `<div class="t" style="color:var(--warn)">! ${esc(x)}</div>`).join("")}</div>`).join("")
+      ${v.avvisi.map((x) => `<div class="t" style="color:var(--warn)">! ${esc(x)}</div>`).join("")}${shadow(v)}</div>`).join("")
     : '<div class="empty">Ancora nessuna proposta oggi</div>';
   renderTab();
 }
