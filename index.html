@@ -98,8 +98,10 @@ tr:last-child td { border-bottom: 0; }
 .tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tab { border: 0; background: transparent; padding: 9px 12px; color: var(--muted); font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
 .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--blue-2); }
-.seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); margin-top: 14px; }
-.seg button { border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+.seg { display: inline-flex; max-width: 100%; gap: 4px; padding: 4px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); margin-top: 14px; }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.rules-t td { white-space: normal; overflow-wrap: anywhere; }
+.rules-t td.r { text-align: right; }
 .seg button[aria-selected="true"] { background: var(--grad); color: #fff; }
 .banner { font-size: 13px; color: var(--muted); padding: 8px 0 0; }
 .setup { max-width: 520px; margin: 40px auto; padding: 24px; display: grid; gap: 14px; }
@@ -112,7 +114,7 @@ tr:last-child td { border-bottom: 0; }
 .sheet .card { width: min(420px, 100%); padding: 20px; display: grid; gap: 12px; }
 .sheet h3 { margin: 0; }
 @media (max-width: 900px) { .goals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid2 { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 480px) { .goal .v { font-size: 19px; } .hero { padding: 18px; } .goals { gap: 10px; } .goal { padding: 14px; } }
+@media (max-width: 480px) { .seg { display: flex; } .seg button { flex: 1; padding: 8px 6px; font-size: 13px; } .goal .v { font-size: 19px; } .hero { padding: 18px; } .goals { gap: 10px; } .goal { padding: 14px; } }
 </style>
 </head>
 <body>
@@ -126,6 +128,7 @@ tr:last-child td { border-bottom: 0; }
   <nav class="seg" role="tablist" id="views">
     <button role="tab" data-v="veloce" aria-selected="true">Veloce · 1-Step</button>
     <button role="tab" data-v="swing" aria-selected="false">Swing · 2-Step</button>
+    <button role="tab" data-v="crypto" aria-selected="false">Crypto · 2-Step</button>
   </nav>
   <div class="banner" id="banner"></div>
   <section class="card setup" id="setup" hidden>
@@ -184,7 +187,7 @@ const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { r
 const b64 = { dec: (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), (c) => c.charCodeAt(0))),
               enc: (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))) };
 let token = null, data = null, ctrl = null, tab = "trades", preview = false, view = "veloce";
-const CTRL_KEY = { veloce: "attivo", swing: "swing_attivo" };
+const CTRL_KEY = { veloce: "attivo", swing: "swing_attivo", crypto: "crypto_attivo" };
 
 const SAMPLE = (() => {
   const t = (h) => "2026-11-18 " + h;
@@ -211,7 +214,16 @@ const SAMPLE = (() => {
       trades: [{ date: "2026-11-17", symbol: "IVV", side: "buy", qty: 7, entry: 701.2, status: "aperto" }, { date: "2026-11-17", symbol: "QQQM", side: "buy", qty: 7, entry: 401.2, status: "aperto" }],
       verdetti: [{ at: "2026-11-17 15:45", symbol: "IAU", lato: "buy", proposta: "sopra la media a 200 giorni che sale", veti: ["dato macro in arrivo mentre saremmo dentro: Inflazione USA (CPI) il 10/12"], avvisi: [], regole: null, esito: "scartato" }],
       regole: { ftmo: { nome: "2-Step Swing", fasi: [10, 5], perdita_giornaliera_pct: 5, perdita_massima_pct: 10, massima: "fissa", costanza_pct: null, giorni_minimi: 4 },
-                bot: { rischio_pct: 0.75, max_posizioni: 3 }, strategia: { nome: "trend 200 + meteo 10/20", media_lunga: 200, decide_alle: "15:45" }, simboli: ["IVV", "QQQM", "IAU"] } } };
+                bot: { rischio_pct: 0.75, max_posizioni: 3 }, strategia: { nome: "trend 200 + meteo 10/20", media_lunga: 200, decide_alle: "15:45" }, simboli: ["IVV", "QQQM", "IAU"] } },
+    crypto: { attivo: false, stato_prova: "in corso", motivo: "", fase: 1, giorni_trading: 1,
+      conto: { inizio: 10000, saldo: 10000, equity: 10042.7, oggi: 18.3, totale: 42.7 },
+      limiti: { obiettivo: 11000, pavimento_giornaliero: 9500, pavimento_massimo: 9000 },
+      costanza: { profit: 0, best_day: 0, best_share_pct: null }, giorni: { "2026-11-18": 0 },
+      aperti: [{ symbol: "BTC/USD", side: "buy", qty: 0.031245, entry: 91250, stop: 88850, prezzo: 92617, pl: 42.7 }],
+      trades: [{ date: "2026-11-18", symbol: "BTC/USD", side: "buy", qty: 0.031245, entry: 91250, status: "aperto" }],
+      verdetti: [{ at: "2026-11-18 15:45", symbol: "ETH/USD", lato: "buy", proposta: "sopra la media a 50 giorni", veti: [], avvisi: [], regole: null, esito: "inviato" }],
+      regole: { ftmo: { nome: "2-Step Swing (crypto)", fasi: [10, 5], perdita_giornaliera_pct: 5, perdita_massima_pct: 10, massima: "fissa", costanza_pct: null, giorni_minimi: 4 },
+                bot: { rischio_pct: 0.75, max_posizioni: 2 }, strategia: { nome: "crypto lento: sopra la media 50, con filtro BTC", decide_alle: "15:45" }, simboli: ["BTC/USD", "ETH/USD"] } } };
 })();
 
 async function gh(path, opts = {}) {
@@ -225,13 +237,13 @@ async function gh(path, opts = {}) {
 async function readFile(path) { const f = await gh("/contents/" + path + "?ref=" + BRANCH); return { doc: JSON.parse(b64.dec(f.content)), sha: f.sha }; }
 
 async function refresh() {
-  if (preview) { data = SAMPLE; ctrl = { doc: { attivo: true, swing_attivo: true } }; return render(); }
+  if (preview) { data = SAMPLE; ctrl = { doc: { attivo: true, swing_attivo: true, crypto_attivo: false } }; return render(); }
   try { ctrl = await readFile("controllo.json"); } catch (e) { if (e.status === 401) return showSetup(e.message); ctrl = { doc: { attivo: false } }; }
   try { data = (await readFile("dati/stato.json")).doc; } catch (e) { if (e.status === 401) return showSetup(e.message); data = null; $("banner").textContent = e.message; }
   render();
 }
 
-function cur() { return !data ? null : view === "swing" ? data.swing : data; }
+function cur() { return !data ? null : view === "veloce" ? data : data[view]; }
 function render() {
   $("setup").hidden = true; $("app").hidden = false;
   document.querySelectorAll("#views button").forEach((b) => { b.setAttribute("aria-selected", b.dataset.v === view); b.onclick = () => { view = b.dataset.v; render(); }; });
@@ -246,7 +258,7 @@ function render() {
   const d = cur();
   if (!d) { $("banner").textContent = "Questa sezione non ha ancora dati."; return; }
   const a = d.conto, lim = d.limiti, f = d.regole.ftmo;
-  $("heroLabel").textContent = view === "swing" ? "Prova FTMO 2-Step Swing · fase " + d.fase + " di " + f.fasi.length : "Prova FTMO 1-Step Standard";
+  $("heroLabel").textContent = view === "veloce" ? "Prova FTMO 1-Step Standard" : "Prova FTMO 2-Step Swing" + (view === "crypto" ? " · crypto" : "") + " · fase " + d.fase + " di " + f.fasi.length;
   $("equity").textContent = usd(a.equity);
   $("today").textContent = signed(a.oggi); $("total").textContent = signed(a.totale);
   $("updated").textContent = new Date(data.aggiornato).toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -304,7 +316,7 @@ function renderTab() {
   } else {
     const r = d.regole, kv = (k, v) => (v === undefined || v === null ? "" : `<tr><td class="muted">${k}</td><td class="r num">${v}</td></tr>`);
     const fasi = r.ftmo.fasi || [r.ftmo.obiettivo_pct];
-    el.innerHTML = `<div class="tw"><table><tbody>
+    el.innerHTML = `<div class="tw"><table class="rules-t"><tbody>
       ${kv("Prova", esc(r.ftmo.nome || ""))}${kv("Conto della prova", usd(d.conto.inizio))}${kv("Obiettivo", fasi.map((x) => "+" + x + " %").join(" poi "))}
       ${kv("Perdita massima al giorno (FTMO)", r.ftmo.perdita_giornaliera_pct + " %")}
       ${kv("Perdita massima totale (FTMO)", r.ftmo.perdita_massima_pct + " % " + (r.ftmo.massima === "fissa" ? "fissa" : "che sale con il massimo di fine giornata"))}
@@ -317,7 +329,7 @@ function renderTab() {
 }
 
 async function toggle() {
-  const key = CTRL_KEY[view], next = !ctrl.doc[key], name = view === "swing" ? "la sezione Swing" : "la sezione Veloce";
+  const key = CTRL_KEY[view], next = !ctrl.doc[key], name = { veloce: "la sezione Veloce", swing: "la sezione Swing", crypto: "la sezione Crypto" }[view];
   $("sheet").hidden = false;
   $("sheet").innerHTML = `<div class="card"><h3>${next ? "Avviare " + name + "?" : "Mettere in pausa " + name + "?"}</h3>
     <div class="muted">${next ? "Da quando il bot lo legge (entro 3 minuti) può aprire nuovi trade sul conto demo." : "Niente nuovi trade. Le posizioni aperte restano gestite con stop, target e chiusura alle 15:55."}</div>
