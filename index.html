@@ -216,7 +216,9 @@ const SAMPLE = (() => {
       costanza: { profit: 0, best_day: 0, best_share_pct: null }, giorni: { "2026-11-17": 0, "2026-11-18": 0 },
       aperti: [{ symbol: "IVV", side: "buy", qty: 7, entry: 701.2, stop: 694.2, prezzo: 708.9, pl: 53.9 }, { symbol: "QQQM", side: "buy", qty: 7, entry: 401.2, stop: 394.2, prezzo: 405.6, pl: 30.8 }],
       trades: [{ date: "2026-11-17", symbol: "IVV", side: "buy", qty: 7, entry: 701.2, status: "aperto" }, { date: "2026-11-17", symbol: "QQQM", side: "buy", qty: 7, entry: 401.2, status: "aperto" }],
-      verdetti: [{ at: "2026-11-17 15:45", symbol: "IAU", lato: "buy", proposta: "sopra la media a 200 giorni che sale", veti: ["dato macro in arrivo mentre saremmo dentro: Inflazione USA (CPI) il 10/12"], avvisi: [], regole: null, esito: "scartato" }],
+      verdetti: [{ at: "2026-11-17 15:45", symbol: "IAU", lato: "buy", proposta: "sopra la media a 200 giorni che sale", veti: ["dato macro in arrivo mentre saremmo dentro: Inflazione USA (CPI) il 10/12"], avvisi: [], regole: null, esito: "scartato", esito_ombra: 0.8 }],
+      dubbio_bilancio: { dubbio: { fermati: 2, valutati: 1, perdite_evitate: 0, guadagni_persi: 1, saldo_r: -0.8, saldo_usd: -60 }, dubbio_oggi: { fermati: 0, valutati: 0, perdite_evitate: 0, guadagni_persi: 0, saldo_r: 0, saldo_usd: 0 },
+                         regole: { fermati: 0, valutati: 0, perdite_evitate: 0, guadagni_persi: 0, saldo_r: 0, saldo_usd: 0 }, orizzonte: "10 giorni di borsa" },
       regole: { ftmo: { nome: "2-Step Swing", fasi: [10, 5], perdita_giornaliera_pct: 5, perdita_massima_pct: 10, massima: "fissa", costanza_pct: null, giorni_minimi: 4 },
                 bot: { rischio_pct: 0.75, max_posizioni: 3 }, strategia: { nome: "trend 200 + meteo 10/20", media_lunga: 200, decide_alle: "15:45" }, simboli: ["IVV", "QQQM", "IAU"] } },
     crypto: { attivo: false, stato_prova: "in corso", motivo: "", fase: 1, giorni_trading: 1,
@@ -289,14 +291,15 @@ function render() {
     : '<div class="empty">Nessuna posizione aperta</div>';
   // the doubter: was it worth it?
   const db = d.dubbio_bilancio, dd = db && db.dubbio;
-  $("doubtBalance").innerHTML = !db ? '<div class="t">Bilancio misurato solo nella sezione Veloce, dove ogni proposta fermata viene rigiocata a fine giornata.</div>'
+  const how = db && db.orizzonte ? "seguita per " + db.orizzonte : "rigiocata a fine giornata";
+  $("doubtBalance").innerHTML = !db ? '<div class="t">Il bilancio compare quando il bot avrà la versione nuova.</div>'
     : !dd.fermati ? '<div class="t">Il Dubbio non ha ancora fermato nessuna proposta.</div>'
-    : !dd.valutati ? `<div class="t">Ha fermato ${dd.fermati} ${dd.fermati === 1 ? "proposta" : "proposte"}: il risultato si vede dopo la chiusura.</div>`
+    : !dd.valutati ? `<div class="t">Ha fermato ${dd.fermati} ${dd.fermati === 1 ? "proposta" : "proposte"}: il risultato si vede ${db.orizzonte ? "dopo " + db.orizzonte : "dopo la chiusura"} (ogni proposta fermata viene ${how}).</div>`
     : `<div class="h"><span class="tag ${dd.saldo_r >= 0 ? "ok" : "no"}">${dd.saldo_r > 0 ? "VANTAGGIOSO" : dd.saldo_r < 0 ? "SVANTAGGIOSO" : "IN PARI"}</span>
         <span class="r num ${cls(dd.saldo_usd)}">${signed(dd.saldo_usd)}</span></div>
        <div class="t">Ha fermato ${dd.fermati} proposte: ${dd.perdite_evitate} sarebbero andate in perdita (soldi risparmiati), ${dd.guadagni_persi} in guadagno (occasioni perse).
        Bilancio ${dd.saldo_r >= 0 ? "+" : "−"}${nf(Math.abs(dd.saldo_r))} R${db.dubbio_oggi.valutati ? ", oggi " + signed(db.dubbio_oggi.saldo_usd) : ""}.</div>`;
-  const shadow = (v) => v.esito !== "scartato" ? "" : v.esito_ombra == null ? '<div class="t muted">Risultato se fosse entrato: dopo la chiusura</div>'
+  const shadow = (v) => v.esito !== "scartato" ? "" : v.esito_ombra == null ? `<div class="t muted">Risultato se fosse entrato: ${db && db.orizzonte ? "dopo " + db.orizzonte : "dopo la chiusura"}</div>`
     : `<div class="t ${v.esito_ombra < 0 ? "gain" : "loss"}">Se fosse entrato: ${v.esito_ombra >= 0 ? "+" : "−"}${nf(Math.abs(v.esito_ombra))} R · ${v.esito_ombra < 0 ? "il Dubbio ha fatto bene" : "il Dubbio ha fatto perdere un'occasione"}</div>`;
   $("verdicts").innerHTML = d.verdetti.length ? d.verdetti.slice().reverse().map((v) => `<div class="item"><div class="h">
       <span class="sym">${esc(v.symbol)}</span><span class="tag ${v.esito === "inviato" ? "ok" : "no"}">${v.esito === "inviato" ? "ORDINE INVIATO" : "FERMATO"}</span>
